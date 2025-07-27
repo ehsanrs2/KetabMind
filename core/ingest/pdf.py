@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Iterable
 
-import fitz  # PyMuPDF
+import fitz
 
 
 def extract_text(path: Path) -> Iterable[str]:

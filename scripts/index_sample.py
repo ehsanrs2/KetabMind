@@ -4,7 +4,8 @@ from pathlib import Path
 
 from core.chunk.sliding import chunk_text
 from core.embed.mock import MockEmbedder
-from core.vector.qdrant import VectorStore
+from core.vector.qdrant import VectorStore, ChunkPayload
+from typing import cast
 
 
 def main() -> None:
@@ -15,7 +16,21 @@ def main() -> None:
         lines = sample.read_text().splitlines()
         chunks = chunk_text(lines)
         embeddings = embedder.embed(chunks)
-        payloads = [{"text": c, "source": sample.name} for c in chunks]
+        payloads = cast(
+            list[ChunkPayload],
+            [
+                {
+                    "text": c,
+                    "book_id": sample.name,
+                    "chapter": None,
+                    "page_start": 0,
+                    "page_end": 0,
+                    "chunk_id": f"{sample.stem}-{i}",
+                    "content_hash": "0",
+                }
+                for i, c in enumerate(chunks)
+            ],
+        )
         store.upsert(embeddings, payloads)
 
 
