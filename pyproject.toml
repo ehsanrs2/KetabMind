@@ -10,7 +10,7 @@ python = "^3.11"
 fastapi = "^0.110.0"
 uvicorn = "^0.27.1"
 PyMuPDF = "^1.23.5"
-tika = "^1.24"
+ebooklib = "^0.19"
 qdrant-client = "^1.6.0"
 pydantic-settings = "^2.0.3"
 

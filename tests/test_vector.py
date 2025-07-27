@@ -14,6 +14,11 @@ class DummyClient:
     def upsert(self, collection_name: str, points: List[Any]) -> None:
         self.upserts.extend(points)
 
+    def scroll(
+        self, collection_name: str, scroll_filter: Any, limit: int, **_: Any
+    ) -> tuple[List[Any], None]:
+        return ([], None)
+
     def search(
         self, collection_name: str, query_vector: List[float], limit: int
     ) -> List[Any]:
@@ -40,8 +45,8 @@ def test_vector_store(monkeypatch: pytest.MonkeyPatch) -> None:
             "content_hash": "h",
         },
     )
-    store.upsert([[0.0, 0.0, 0.0]], [payload])
-    assert dummy.upserts
+    new, skipped = store.upsert([[0.0, 0.0, 0.0]], [payload])
+    assert new == 1 and skipped == 0 and dummy.upserts
     res = store.query([0.0, 0.0, 0.0], 1)
     assert res[0]["text"] == "dummy"
 
@@ -66,6 +71,7 @@ def test_vector_store_local(monkeypatch: pytest.MonkeyPatch) -> None:
             "content_hash": "h",
         },
     )
-    store.upsert([[0.0, 0.0, 0.0]], [payload])
+    new, skipped = store.upsert([[0.0, 0.0, 0.0]], [payload])
+    assert new == 1 and skipped == 0
     res = store.query([0.0, 0.0, 0.0], 1)
     assert res[0]["text"] == "test"

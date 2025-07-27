@@ -2,6 +2,7 @@
 # mypy: ignore-errors
 
 from pathlib import Path
+import hashlib
 
 from collections.abc import AsyncGenerator
 from fastapi import FastAPI, UploadFile
@@ -37,7 +38,7 @@ async def index(file: UploadFile) -> dict[str, str]:
             "page_start": 0,
             "page_end": 0,
             "chunk_id": str(i),
-            "content_hash": "0",
+            "content_hash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
         }
         for i, chunk in enumerate(chunks)
     ]

@@ -3,4 +3,5 @@ __pycache__/
 .env
 .poetry/
 *.pdf
+!docs/fixtures/*.pdf
 .ipynb_checkpoints/

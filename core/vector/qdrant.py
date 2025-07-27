@@ -33,12 +33,36 @@ class VectorStore:
 
     def upsert(
         self, embeddings: Iterable[List[float]], payloads: Iterable[ChunkPayload]
-    ) -> None:
+    ) -> tuple[int, int]:
+        new_vecs: list[List[float]] = []
+        new_payloads: list[ChunkPayload] = []
+        skipped = 0
+        for vec, payload in zip(embeddings, payloads):
+            existing, _ = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=rest.Filter(
+                    must=[
+                        rest.FieldCondition(
+                            key="content_hash",
+                            match=rest.MatchValue(value=payload["content_hash"]),
+                        )
+                    ]
+                ),
+                limit=1,
+            )
+            if existing:
+                skipped += 1
+                continue
+            new_vecs.append(vec)
+            new_payloads.append(payload)
+
         points = [
-            rest.PointStruct(id=i, vector=vec, payload=dict(payload))
-            for i, (vec, payload) in enumerate(zip(embeddings, payloads))
+            rest.PointStruct(id=i, vector=vec, payload=dict(pl))
+            for i, (vec, pl) in enumerate(zip(new_vecs, new_payloads))
         ]
-        self.client.upsert(collection_name=self.collection, points=points)
+        if points:
+            self.client.upsert(collection_name=self.collection, points=points)
+        return len(points), skipped
 
     def query(self, embedding: List[float], top_k: int) -> List[ChunkPayload]:
         result = self.client.search(
