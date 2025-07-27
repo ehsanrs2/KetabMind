@@ -1,8 +1,10 @@
 from typing import Any, List
 
 import pytest
+from qdrant_client.http import models as rest
+from typing import cast
 
-from core.vector import qdrant
+import core.vector.qdrant as qdrant
 
 
 class DummyClient:
@@ -24,9 +26,46 @@ class DummyClient:
 
 def test_vector_store(monkeypatch: pytest.MonkeyPatch) -> None:
     dummy = DummyClient()
-    monkeypatch.setattr(qdrant, "QdrantClient", lambda url: dummy)
+    monkeypatch.setattr(qdrant, "QdrantClient", lambda *a, **k: dummy)
     store = qdrant.VectorStore()
-    store.upsert([[0.0, 0.0, 0.0]], [{"text": "a"}])
+    payload = cast(
+        qdrant.ChunkPayload,
+        {
+            "text": "a",
+            "book_id": "b",
+            "chapter": None,
+            "page_start": 1,
+            "page_end": 1,
+            "chunk_id": "c1",
+            "content_hash": "h",
+        },
+    )
+    store.upsert([[0.0, 0.0, 0.0]], [payload])
     assert dummy.upserts
     res = store.query([0.0, 0.0, 0.0], 1)
     assert res[0]["text"] == "dummy"
+
+
+def test_vector_store_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(qdrant.settings, "qdrant_mode", "local")  # type: ignore[attr-defined]
+    monkeypatch.setattr(qdrant.settings, "qdrant_url", None)  # type: ignore[attr-defined]
+    store = qdrant.VectorStore()
+    store.client.recreate_collection(
+        collection_name=store.collection,
+        vectors_config=rest.VectorParams(size=3, distance=rest.Distance.COSINE),
+    )
+    payload = cast(
+        qdrant.ChunkPayload,
+        {
+            "text": "test",
+            "book_id": "b",
+            "chapter": None,
+            "page_start": 1,
+            "page_end": 1,
+            "chunk_id": "c1",
+            "content_hash": "h",
+        },
+    )
+    store.upsert([[0.0, 0.0, 0.0]], [payload])
+    res = store.query([0.0, 0.0, 0.0], 1)
+    assert res[0]["text"] == "test"
