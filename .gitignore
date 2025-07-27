@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+.poetry/
+*.pdf
+.ipynb_checkpoints/

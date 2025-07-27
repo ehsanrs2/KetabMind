@@ -1,0 +1,2 @@
+This is the first sample document.
+It has multiple lines of text for testing.

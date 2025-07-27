@@ -1,0 +1,2 @@
+This is the second sample document.
+It also contains several lines.
