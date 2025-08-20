@@ -13,6 +13,8 @@ PyMuPDF = "^1.23.5"
 ebooklib = "^0.19"
 qdrant-client = "^1.6.0"
 pydantic-settings = "^2.0.3"
+sentence-transformers = "^2.6.0"
+torch = {version = "^2.3.0", extras = ["cpu"]}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
