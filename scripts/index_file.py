@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Iterable, List, Optional, cast
+from typing import Iterable, List, cast
 
 import typer
 
@@ -24,7 +24,7 @@ def _read_lines(path: Path) -> Iterable[str]:
     return path.read_text(encoding="utf-8").splitlines()
 
 
-@app.command()
+@app.command()  # type: ignore[misc]
 def main(in_path: Path, collection: str = "books") -> None:
     """Index a single file."""
     embedder = MockEmbedder()
@@ -55,4 +55,3 @@ def main(in_path: Path, collection: str = "books") -> None:
 
 if __name__ == "__main__":
     app()
-
