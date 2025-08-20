@@ -7,3 +7,10 @@ Set `EMBED_MODEL` in `.env` to choose the embedding backend:
 - `mock` uses a lightweight mock embedder for tests
 
 The first run with a real model downloads roughly 400 MB of weights.
+
+Set `QDRANT_LOCATION` in `.env` for local vector storage:
+
+```
+QDRANT_LOCATION=./qdrant_local
+# For unit tests set QDRANT_LOCATION=:memory:
+```

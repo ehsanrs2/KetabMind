@@ -1,8 +1,7 @@
-from typing import Any, List
+from typing import Any, List, cast
 
 import pytest
 from qdrant_client.http import models as rest
-from typing import cast
 
 import core.vector.qdrant as qdrant
 
@@ -38,6 +37,8 @@ class DummyClient:
 
 
 def test_vector_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(qdrant.settings, "qdrant_mode", "local")  # type: ignore[attr-defined]
+    monkeypatch.setattr(qdrant.settings, "qdrant_location", ":memory:")  # type: ignore[attr-defined]
     dummy = DummyClient()
     monkeypatch.setattr(qdrant, "QdrantClient", lambda *a, **k: dummy)
     store = qdrant.VectorStore()
@@ -62,6 +63,7 @@ def test_vector_store(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_vector_store_local(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qdrant.settings, "qdrant_mode", "local")  # type: ignore[attr-defined]
     monkeypatch.setattr(qdrant.settings, "qdrant_url", None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(qdrant.settings, "qdrant_location", ":memory:")  # type: ignore[attr-defined]
     store = qdrant.VectorStore()
     store.client.recreate_collection(
         collection_name=store.collection,

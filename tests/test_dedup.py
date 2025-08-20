@@ -1,10 +1,12 @@
 from pathlib import Path
 from typing import cast
 
+import pytest
 from qdrant_client.http import models as rest
 
 from core.chunk.sliding import chunk_text
 from core.embed.mock import MockEmbedder
+import core.vector.qdrant as qdrant
 from core.vector.qdrant import VectorStore, ChunkPayload
 from core.ingest.pdf import extract_pages
 
@@ -23,7 +25,9 @@ def index_pdf(path: Path, store: VectorStore) -> tuple[int, int]:
                 "page_start": 0,
                 "page_end": 0,
                 "chunk_id": str(i),
-                "content_hash": __import__("hashlib").sha256(c.encode("utf-8")).hexdigest(),
+                "content_hash": __import__("hashlib")
+                .sha256(c.encode("utf-8"))
+                .hexdigest(),
             },
         )
         for i, c in enumerate(chunks)
@@ -31,7 +35,9 @@ def index_pdf(path: Path, store: VectorStore) -> tuple[int, int]:
     return store.upsert(embeddings, payloads)
 
 
-def test_dedup() -> None:
+def test_dedup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(qdrant.settings, "qdrant_mode", "local")  # type: ignore[attr-defined]
+    monkeypatch.setattr(qdrant.settings, "qdrant_location", ":memory:")  # type: ignore[attr-defined]
     store = VectorStore()
     store.client.recreate_collection(
         collection_name=store.collection,
@@ -41,5 +47,3 @@ def test_dedup() -> None:
     index_pdf(path, store)
     new, skipped = index_pdf(path, store)
     assert skipped > 0
-
-

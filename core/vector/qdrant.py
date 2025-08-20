@@ -1,12 +1,30 @@
 """Qdrant vector store client."""
 
-from typing import Iterable, List, Optional, TypedDict
+from pathlib import Path
+from typing import Iterable, List, Optional, TypedDict, cast
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
 
 from ..config import settings
-from typing import cast
+
+
+def make_qdrant_client() -> QdrantClient:
+    """Build Qdrant client based on settings."""
+    if settings.qdrant_mode == "local":
+        location = settings.qdrant_location
+        if location == ":memory:":
+            return QdrantClient(path=location)
+        path = Path(location)
+        path.mkdir(parents=True, exist_ok=True)
+        return QdrantClient(path=str(path))
+    if settings.qdrant_mode == "docker":
+        if not settings.qdrant_url:
+            raise RuntimeError("QDRANT_URL required for docker mode")
+        return QdrantClient(url=settings.qdrant_url)
+    if not settings.qdrant_url:
+        raise RuntimeError("QDRANT_URL required for remote mode")
+    return QdrantClient(url=settings.qdrant_url)
 
 
 class ChunkPayload(TypedDict):
@@ -25,10 +43,7 @@ class VectorStore:
     """Simple Qdrant wrapper."""
 
     def __init__(self) -> None:
-        if settings.qdrant_mode == "local" or not settings.qdrant_url:
-            self.client = QdrantClient(location=":memory:")
-        else:
-            self.client = QdrantClient(url=settings.qdrant_url)
+        self.client = make_qdrant_client()
         self.collection = settings.qdrant_collection
 
     def _ensure_collection(self, dim: int) -> None:
@@ -85,3 +100,10 @@ class VectorStore:
             collection_name=self.collection, query_vector=embedding, limit=top_k
         )
         return [cast(ChunkPayload, hit.payload) for hit in result]
+
+    def wipe_collection(self) -> None:
+        """Drop the current collection."""
+        try:
+            self.client.delete_collection(collection_name=self.collection)
+        except Exception:
+            pass
