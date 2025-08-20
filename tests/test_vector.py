@@ -10,6 +10,14 @@ import core.vector.qdrant as qdrant
 class DummyClient:
     def __init__(self) -> None:
         self.upserts: list[Any] = []
+        self.collection_exists = False
+
+    def get_collection(self, collection_name: str) -> None:
+        if not self.collection_exists:
+            raise Exception("missing")
+
+    def recreate_collection(self, collection_name: str, vectors_config: Any) -> None:
+        self.collection_exists = True
 
     def upsert(self, collection_name: str, points: List[Any]) -> None:
         self.upserts.extend(points)
