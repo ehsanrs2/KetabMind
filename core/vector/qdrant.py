@@ -31,13 +31,29 @@ class VectorStore:
             self.client = QdrantClient(url=settings.qdrant_url)
         self.collection = settings.qdrant_collection
 
+    def _ensure_collection(self, dim: int) -> None:
+        """Create collection if missing."""
+        try:
+            self.client.get_collection(self.collection)
+        except Exception:
+            self.client.recreate_collection(
+                collection_name=self.collection,
+                vectors_config=rest.VectorParams(
+                    size=dim, distance=rest.Distance.COSINE
+                ),
+            )
+
     def upsert(
         self, embeddings: Iterable[List[float]], payloads: Iterable[ChunkPayload]
     ) -> tuple[int, int]:
         new_vecs: list[List[float]] = []
         new_payloads: list[ChunkPayload] = []
         skipped = 0
+        ensured = False
         for vec, payload in zip(embeddings, payloads):
+            if not ensured:
+                self._ensure_collection(len(vec))
+                ensured = True
             existing, _ = self.client.scroll(
                 collection_name=self.collection,
                 scroll_filter=rest.Filter(
