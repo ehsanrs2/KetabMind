@@ -9,7 +9,7 @@ from typing import Iterable, List, cast
 import typer
 
 from core.chunk.sliding import chunk_text
-from core.embed.mock import MockEmbedder
+from core.embed import get_embedder
 from core.vector.qdrant import VectorStore, ChunkPayload
 from core.ingest import pdf, epub
 
@@ -26,8 +26,8 @@ def _read_lines(path: Path) -> Iterable[str]:
 
 @app.command()  # type: ignore[misc]
 def main(in_path: Path, collection: str = "books") -> None:
-    """Index a single file."""
-    embedder = MockEmbedder()
+    """Index a single file using the embedder selected via EMBED_MODEL."""
+    embedder = get_embedder()
     store = VectorStore()
     store.collection = collection
     lines = list(_read_lines(in_path))
