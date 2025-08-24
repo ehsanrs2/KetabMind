@@ -4,21 +4,18 @@
 from pathlib import Path
 import hashlib
 
-from collections.abc import AsyncGenerator
 from fastapi import FastAPI, UploadFile
-from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from core.ingest import pdf
 from core.chunk.sliding import chunk_text
-from core.embed.mock import MockEmbedder
+from core.embed import get_embedder
 from core.vector.qdrant import VectorStore, ChunkPayload
-from core.retrieve.simple import Retriever
-from core.answer.mock import generate_answer
+from core.answer.answerer import answer
 
 app = FastAPI()
-embedder = MockEmbedder()
+embedder = get_embedder()
 store = VectorStore()
-retriever = Retriever(embedder, store)
 
 
 @app.post("/index")
@@ -46,13 +43,11 @@ async def index(file: UploadFile) -> dict[str, str]:
     return {"status": "indexed"}
 
 
+class QueryRequest(BaseModel):
+    q: str
+    top_k: int = 8
+
+
 @app.post("/query")
-async def query(q: str, top_k: int = 5) -> StreamingResponse:
-    docs = retriever.retrieve(q, top_k)
-    texts = [d["text"] for d in docs]
-    answer = generate_answer(q, texts)
-
-    async def stream() -> AsyncGenerator[str, None]:
-        yield answer
-
-    return StreamingResponse(stream(), media_type="text/plain")
+async def query(request: QueryRequest) -> dict:
+    return answer(request.q, request.top_k)
