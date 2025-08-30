@@ -1,57 +1,94 @@
-"""Index a file into Qdrant."""
-
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Iterable, List, cast
+import uuid
 
-import typer
-
-from core.chunk.sliding import chunk_text
-from core.embed import get_embedder
-from core.vector.qdrant import VectorStore, ChunkPayload
-from core.ingest import pdf, epub
-
-app = typer.Typer()
+from core.chunk.chunker import sliding_window_chunks
+from core.config import settings
+from core.embed.adapter import get_embedder
+from core.ingest.pdf_to_text import pdf_to_pages
+from core.vector.qdrant_client import VectorStore
 
 
-def _read_lines(path: Path) -> Iterable[str]:
-    if path.suffix.lower() == ".pdf":
-        return (p["text"] for p in pdf.extract_pages(path))
-    if path.suffix.lower() == ".epub":
-        return (p["text"] for p in epub.extract_pages(path))
-    return path.read_text(encoding="utf-8").splitlines()
+def _book_id_from_path(path: Path) -> str:
+    return path.stem
 
 
-@app.command()  # type: ignore[misc]
-def main(in_path: Path, collection: str = "books") -> None:
-    """Index a single file using the embedder selected via EMBED_MODEL."""
-    embedder = get_embedder()
-    store = VectorStore()
-    store.collection = collection
-    lines = list(_read_lines(in_path))
-    chunks = chunk_text(lines)
-    embeddings = embedder.embed(chunks)
-    payloads: List[ChunkPayload] = []
-    for i, chunk in enumerate(chunks):
+def _read_text_file(path: Path) -> list[tuple[str, int]]:
+    text = path.read_text(encoding="utf-8")
+    return [(text, 1)]
+
+
+def index_path(in_path: Path) -> None:
+    if not in_path.exists():
+        raise SystemExit(f"File not found: {in_path}")
+
+    if in_path.suffix.lower() == ".pdf":
+        pages = pdf_to_pages(in_path)
+        texts_pages = [(p.text, p.page_num) for p in pages]
+    elif in_path.suffix.lower() in {".txt", ".md"}:
+        texts_pages = _read_text_file(in_path)
+    else:
+        raise SystemExit("Unsupported file type; use .pdf or .txt")
+
+    book_id = _book_id_from_path(in_path)
+
+    embedder = get_embedder(settings.embed_model)
+    store = VectorStore(
+        mode=settings.qdrant_mode,
+        location=settings.qdrant_location,
+        url=settings.qdrant_url,
+        collection=settings.qdrant_collection,
+        vector_size=embedder.dim,
+    )
+    store.ensure_collection()
+
+    chunks = sliding_window_chunks(
+        texts_pages,
+        book_id=book_id,
+        size=settings.chunk_size,
+        overlap=settings.chunk_overlap,
+    )
+
+    ids: list[str] = []
+    payloads: list[dict] = []
+    for ch in chunks:
+        # Use deterministic UUIDv5 for Qdrant-compatible point IDs
+        name = f"{book_id}||{ch.text}"
+        uid = str(uuid.uuid5(uuid.NAMESPACE_URL, name))
+        ids.append(uid)
         payloads.append(
-            cast(
-                ChunkPayload,
-                {
-                    "text": chunk,
-                    "book_id": in_path.name,
-                    "chapter": None,
-                    "page_start": 0,
-                    "page_end": 0,
-                    "chunk_id": str(i),
-                    "content_hash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
-                },
-            )
+            {
+                "text": ch.text,
+                "book_id": ch.book_id,
+                "page_start": ch.page_start,
+                "page_end": ch.page_end,
+                "chunk_id": ch.chunk_id,
+            }
         )
-    new, skipped = store.upsert(embeddings, payloads)
-    typer.echo(f"new={new} skipped={skipped}")
+
+    # Determine which are new
+    existing = set(store.retrieve_existing(ids))
+    new_mask = [pid not in existing for pid in ids]
+    new_count = sum(1 for m in new_mask if m)
+    skipped_count = len(ids) - new_count
+
+    vecs = embedder.embed_texts([p["text"] for p in payloads])
+    store.upsert(ids=ids, vectors=vecs, payloads=payloads)
+
+    print(f"Indexed book={book_id} new={new_count} skipped={skipped_count} total={len(ids)}")
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path", help="Input file (.pdf or .txt)")
+    args = parser.parse_args()
+    in_path = Path(args.path)
+    index_path(in_path)
 
 
 if __name__ == "__main__":
-    app()
+    main()
