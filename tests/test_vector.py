@@ -1,4 +1,4 @@
-from typing import Any, List, cast
+from typing import Any, cast
 
 import pytest
 from qdrant_client.http import models as rest
@@ -18,17 +18,15 @@ class DummyClient:
     def recreate_collection(self, collection_name: str, vectors_config: Any) -> None:
         self.collection_exists = True
 
-    def upsert(self, collection_name: str, points: List[Any]) -> None:
+    def upsert(self, collection_name: str, points: list[Any]) -> None:
         self.upserts.extend(points)
 
     def scroll(
         self, collection_name: str, scroll_filter: Any, limit: int, **_: Any
-    ) -> tuple[List[Any], None]:
+    ) -> tuple[list[Any], None]:
         return ([], None)
 
-    def search(
-        self, collection_name: str, query_vector: List[float], limit: int
-    ) -> List[Any]:
+    def search(self, collection_name: str, query_vector: list[float], limit: int) -> list[Any]:
         class Hit:
             def __init__(self, payload: dict[str, Any]) -> None:
                 self.payload = payload

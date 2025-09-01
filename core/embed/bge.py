@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import ClassVar, List
+from typing import ClassVar
 
 from sentence_transformers import SentenceTransformer
 
 from .base import Embedder
-
 
 _MODEL_NAMES = {
     384: "BAAI/bge-small-en-v1.5",
@@ -34,8 +33,13 @@ class BgeEmbedder(Embedder):
 
         self._model_instance = BgeEmbedder._model
 
-    def embed(self, texts: Iterable[str]) -> List[List[float]]:
+    def embed(self, texts: Iterable[str]) -> list[list[float]]:
         vectors = self._model_instance.encode(
             list(texts), normalize_embeddings=True, show_progress_bar=False
         )
         return [list(map(float, vec)) for vec in vectors]
+
+    # Compatibility attribute
+    @property
+    def dim(self) -> int:  # pragma: no cover - simple property
+        return self.embed_dim

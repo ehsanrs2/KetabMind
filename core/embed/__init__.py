@@ -1,21 +1,30 @@
-"""Embedding factory."""
-
 from __future__ import annotations
 
-import os
+from core.config import settings
 
 from .base import Embedder
-from .bge import BgeEmbedder
 from .mock import MockEmbedder
 
 
 def get_embedder() -> Embedder:
-    """Return embedder based on `EMBED_MODEL` env variable."""
-    model = os.getenv("EMBED_MODEL", "small").lower()
-    if model == "mock":
+    """Return an embedder based on settings.embed_model.
+
+    Supported values:
+    - mock: lightweight deterministic mock (small dim)
+    - small: BGE small (384)
+    - base: BGE base (768)
+    """
+    name = (settings.embed_model or "mock").lower()
+    if name == "mock":
         return MockEmbedder()
-    if model == "base":
+    # Lazy import to avoid heavy deps unless requested
+    try:
+        from .bge import BgeEmbedder  # type: ignore
+    except Exception as exc:  # pragma: no cover - import guard
+        raise RuntimeError(
+            "BGE requires sentence-transformers. Install it or set EMBED_MODEL=mock."
+        ) from exc
+    if name == "base":
         return BgeEmbedder(embed_dim=768)
-    if model == "small":
-        return BgeEmbedder(embed_dim=384)
-    raise ValueError(f"Unsupported EMBED_MODEL: {model}")
+    # default to small
+    return BgeEmbedder(embed_dim=384)

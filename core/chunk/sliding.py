@@ -1,15 +1,14 @@
 """Chunk text using a sliding window."""
 
 from collections.abc import Iterable
-from typing import List
 
 
-def chunk_text(lines: Iterable[str], size: int = 100, overlap: int = 20) -> List[str]:
+def chunk_text(lines: Iterable[str], size: int = 100, overlap: int = 20) -> list[str]:
     """Return list of text chunks."""
-    words: List[str] = []
+    words: list[str] = []
     for line in lines:
         words.extend(line.split())
-    chunks: List[str] = []
+    chunks: list[str] = []
     start = 0
     while start < len(words):
         end = min(start + size, len(words))

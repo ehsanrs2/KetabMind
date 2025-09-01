@@ -1,11 +1,10 @@
-"""Retriever with simple lexical rerank."""
-
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from core.embed import get_embedder
-from core.vector.qdrant import VectorStore, ChunkPayload
+from core.vector.qdrant import VectorStore
 
 
 @dataclass
@@ -18,36 +17,45 @@ class ScoredChunk:
 
 
 class Retriever:
-    """Retrieve top chunks for a query."""
+    """k-NN retriever with simple lexical reranking."""
 
     def __init__(self, top_k: int = 8) -> None:
         self.top_k = top_k
-        self.embedder = get_embedder()
-        self.store = VectorStore()
+        # Allow test to override the store if needed
+        self.store: VectorStore | None = None
+
+    def _tokenize(self, text: str) -> set[str]:
+        return set(re.findall(r"[A-Za-z0-9]+", text.lower()))
+
+    def _overlap_score(self, query_tokens: set[str], chunk_tokens: set[str]) -> float:
+        if not query_tokens or not chunk_tokens:
+            return 0.0
+        common = len(query_tokens & chunk_tokens)
+        total = len(query_tokens | chunk_tokens) or 1
+        return common / total
 
     def retrieve(self, query: str, top_k: int | None = None) -> list[ScoredChunk]:
         k = top_k or self.top_k
-        embedding = self.embedder.embed([query])[0]
-        hits: list[ChunkPayload] = self.store.query(embedding, k)
-        q_tokens = set(query.lower().split())
-        scored: list[ScoredChunk] = []
-        for hit in hits:
-            text = hit["text"]
-            tokens = set(text.lower().split())
-            overlap = (
-                len(q_tokens & tokens) / len(q_tokens | tokens)
-                if q_tokens or tokens
-                else 0.0
-            )
-            score = overlap
-            scored.append(
+        embedder = get_embedder()
+        qvec = embedder.embed([query])[0]
+
+        store = self.store or VectorStore()
+        hits = store.query(qvec, top_k=k)
+
+        q_tokens = self._tokenize(query)
+        results: list[ScoredChunk] = []
+        for p in hits:
+            text = p.get("text", "")
+            score = self._overlap_score(q_tokens, self._tokenize(text))
+            results.append(
                 ScoredChunk(
                     text=text,
-                    book_id=hit["book_id"],
-                    page_start=hit["page_start"],
-                    page_end=hit["page_end"],
+                    book_id=p.get("book_id", ""),
+                    page_start=int(p.get("page_start", -1)),
+                    page_end=int(p.get("page_end", -1)),
                     score=score,
                 )
             )
-        scored.sort(key=lambda c: c.score, reverse=True)
-        return scored
+
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results

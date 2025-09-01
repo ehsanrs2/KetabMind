@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional, TypedDict
+from typing import TypedDict
 
 import fitz
 
@@ -15,7 +16,7 @@ class PageDict(TypedDict):
 
     page_num: int
     text: str
-    section: Optional[str]
+    section: str | None
 
 
 def extract_pages(
@@ -33,7 +34,7 @@ def extract_pages(
         toc = doc.get_toc(simple=True)
         toc_sorted = sorted(toc, key=lambda t: t[2]) if toc else []
         toc_idx = 0
-        current: Optional[str] = None
+        current: str | None = None
         for i, page in enumerate(doc, start=1):
             while toc_idx < len(toc_sorted) and toc_sorted[toc_idx][2] <= i:
                 current = toc_sorted[toc_idx][1]
@@ -43,9 +44,6 @@ def extract_pages(
             if top:
                 lines = lines[top:]
             if bottom:
-                if bottom < len(lines):
-                    lines = lines[:-bottom]
-                else:
-                    lines = []
+                lines = lines[:-bottom] if bottom < len(lines) else []
             cleaned = "\n".join(lines).strip()
             yield {"page_num": i, "text": cleaned, "section": current}

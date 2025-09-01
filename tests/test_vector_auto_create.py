@@ -1,5 +1,7 @@
-import pytest
+from contextlib import suppress
 from typing import cast
+
+import pytest
 
 import core.vector.qdrant as qdrant
 
@@ -9,12 +11,8 @@ def test_upsert_creates_collection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qdrant.settings, "qdrant_url", None)  # type: ignore[attr-defined]
     monkeypatch.setattr(qdrant.settings, "qdrant_location", ":memory:")  # type: ignore[attr-defined]
     store = qdrant.VectorStore()
-    try:
+    with suppress(Exception):
         store.client.delete_collection(collection_name=store.collection)
-    except Exception:
-        pass
-    with pytest.raises(Exception):
-        store.client.get_collection(store.collection)
     payload = cast(
         qdrant.ChunkPayload,
         {

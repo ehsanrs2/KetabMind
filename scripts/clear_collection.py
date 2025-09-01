@@ -1,19 +1,31 @@
-import os
+from __future__ import annotations
 
-import typer
+import argparse
 
-app = typer.Typer()
+from core.config import settings
+from core.embed.adapter import get_embedder
+from core.vector.qdrant_client import VectorStore
 
 
-@app.command()  # type: ignore[misc]
-def main(collection: str, mode: str = typer.Option("local", "--mode")) -> None:
-    os.environ["QDRANT_MODE"] = mode
-    from core.vector.qdrant import VectorStore
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("collection", help="Collection name to delete")
+    args = parser.parse_args()
 
-    store = VectorStore()
-    store.collection = collection
-    store.wipe_collection()
+    embedder = get_embedder(settings.embed_model)
+    store = VectorStore(
+        mode=settings.qdrant_mode,
+        location=settings.qdrant_location,
+        url=settings.qdrant_url,
+        collection=args.collection,
+        vector_size=embedder.dim,
+    )
+    try:
+        store.delete_collection()
+        print(f"Deleted collection: {args.collection}")
+    except Exception as e:  # noqa: BLE001
+        print(f"Failed to delete collection: {e}")
 
 
 if __name__ == "__main__":
-    app()
+    main()

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from core.retrieve.retriever import Retriever
 
-retriever = Retriever()
+_retriever = Retriever()
 
 
 def answer(query: str, top_k: int = 8) -> dict[str, object]:
-    contexts = retriever.retrieve(query, top_k)
-    return {"answer": "TODO", "contexts": [c.__dict__ for c in contexts]}
+    contexts = _retriever.retrieve(query, top_k)
+    return {"answer": "TODO", "contexts": [asdict(c) for c in contexts]}

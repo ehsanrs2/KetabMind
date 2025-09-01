@@ -4,11 +4,11 @@ from typing import cast
 import pytest
 from qdrant_client.http import models as rest
 
+import core.vector.qdrant as qdrant
 from core.chunk.sliding import chunk_text
 from core.embed.mock import MockEmbedder
-import core.vector.qdrant as qdrant
-from core.vector.qdrant import VectorStore, ChunkPayload
 from core.ingest.pdf import extract_pages
+from core.vector.qdrant import ChunkPayload, VectorStore
 
 
 def index_pdf(path: Path, store: VectorStore) -> tuple[int, int]:
@@ -25,9 +25,7 @@ def index_pdf(path: Path, store: VectorStore) -> tuple[int, int]:
                 "page_start": 0,
                 "page_end": 0,
                 "chunk_id": str(i),
-                "content_hash": __import__("hashlib")
-                .sha256(c.encode("utf-8"))
-                .hexdigest(),
+                "content_hash": __import__("hashlib").sha256(c.encode("utf-8")).hexdigest(),
             },
         )
         for i, c in enumerate(chunks)

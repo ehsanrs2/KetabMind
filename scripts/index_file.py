@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import hashlib
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 from core.chunk.chunker import sliding_window_chunks
 from core.config import settings
-from core.embed.adapter import get_embedder
+from core.embed import get_embedder
 from core.ingest.pdf_to_text import pdf_to_pages
 from core.vector.qdrant_client import VectorStore
 
@@ -34,13 +33,13 @@ def index_path(in_path: Path) -> None:
 
     book_id = _book_id_from_path(in_path)
 
-    embedder = get_embedder(settings.embed_model)
+    embedder = get_embedder()
     store = VectorStore(
         mode=settings.qdrant_mode,
         location=settings.qdrant_location,
         url=settings.qdrant_url,
         collection=settings.qdrant_collection,
-        vector_size=embedder.dim,
+        vector_size=getattr(embedder, "dim", len(embedder.embed(["test"])[0])),
     )
     store.ensure_collection()
 
@@ -74,7 +73,9 @@ def index_path(in_path: Path) -> None:
     new_count = sum(1 for m in new_mask if m)
     skipped_count = len(ids) - new_count
 
-    vecs = embedder.embed_texts([p["text"] for p in payloads])
+    import numpy as np
+
+    vecs = np.asarray(embedder.embed([p["text"] for p in payloads]), dtype=np.float32)
     store.upsert(ids=ids, vectors=vecs, payloads=payloads)
 
     print(f"Indexed book={book_id} new={new_count} skipped={skipped_count} total={len(ids)}")

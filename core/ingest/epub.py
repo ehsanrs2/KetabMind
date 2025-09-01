@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional, TypedDict
+from typing import TypedDict
 
 from ebooklib import epub
 
@@ -12,7 +13,7 @@ from ebooklib import epub
 class PageDict(TypedDict):
     page_num: int
     text: str
-    section: Optional[str]
+    section: str | None
 
 
 def _html_to_text(html: str) -> str:

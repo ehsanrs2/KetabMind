@@ -1,7 +1,20 @@
-# KetabMind
+KetabMind — RAG system for books
 
-Monorepo skeleton for a RAG-based question answering system over books.
+Quickstart
 
-## Configuration
+- poetry install
+- cp .env.example .env
+- make test
+- make run
 
-`EMBED_MODEL` selects the embedding backend (`mock`, `small`, `base`).
+Embedding models
+
+- Set `EMBED_MODEL` to select the embedder:
+  - `mock` (fast, offline; for tests)
+  - `small` (BGE small, 384-dim)
+  - `base` (BGE base, 768-dim)
+
+Querying
+
+- POST `/query` with `{ "q": "your question", "top_k": 5 }`.
+- Response contains `answer` and `contexts` (retrieved chunks).

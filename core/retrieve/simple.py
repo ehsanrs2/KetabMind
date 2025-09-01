@@ -1,6 +1,5 @@
 """Retrieve documents using the vector store."""
 
-from typing import List
 
 from ..embed.base import Embedder
 from ..vector import qdrant
@@ -14,6 +13,6 @@ class Retriever:
         self.embedder = embedder
         self.store = store
 
-    def retrieve(self, query: str, top_k: int = 5) -> List[qdrant.ChunkPayload]:
+    def retrieve(self, query: str, top_k: int = 5) -> list[qdrant.ChunkPayload]:
         embedding = self.embedder.embed([query])[0]
         return self.store.query(embedding, top_k)

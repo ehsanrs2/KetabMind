@@ -1,7 +1,9 @@
 """Qdrant vector store client."""
 
+from collections.abc import Iterable
+from contextlib import suppress
 from pathlib import Path
-from typing import Iterable, List, Optional, TypedDict, cast
+from typing import TypedDict, cast
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
@@ -32,7 +34,7 @@ class ChunkPayload(TypedDict):
 
     text: str
     book_id: str
-    chapter: Optional[str]
+    chapter: str | None
     page_start: int
     page_end: int
     chunk_id: str
@@ -53,19 +55,17 @@ class VectorStore:
         except Exception:
             self.client.recreate_collection(
                 collection_name=self.collection,
-                vectors_config=rest.VectorParams(
-                    size=dim, distance=rest.Distance.COSINE
-                ),
+                vectors_config=rest.VectorParams(size=dim, distance=rest.Distance.COSINE),
             )
 
     def upsert(
-        self, embeddings: Iterable[List[float]], payloads: Iterable[ChunkPayload]
+        self, embeddings: Iterable[list[float]], payloads: Iterable[ChunkPayload]
     ) -> tuple[int, int]:
-        new_vecs: list[List[float]] = []
+        new_vecs: list[list[float]] = []
         new_payloads: list[ChunkPayload] = []
         skipped = 0
         ensured = False
-        for vec, payload in zip(embeddings, payloads):
+        for vec, payload in zip(embeddings, payloads, strict=False):
             if not ensured:
                 self._ensure_collection(len(vec))
                 ensured = True
@@ -89,13 +89,13 @@ class VectorStore:
 
         points = [
             rest.PointStruct(id=i, vector=vec, payload=dict(pl))
-            for i, (vec, pl) in enumerate(zip(new_vecs, new_payloads))
+            for i, (vec, pl) in enumerate(zip(new_vecs, new_payloads, strict=False))
         ]
         if points:
             self.client.upsert(collection_name=self.collection, points=points)
         return len(points), skipped
 
-    def query(self, embedding: List[float], top_k: int) -> List[ChunkPayload]:
+    def query(self, embedding: list[float], top_k: int) -> list[ChunkPayload]:
         result = self.client.search(
             collection_name=self.collection, query_vector=embedding, limit=top_k
         )
@@ -103,7 +103,5 @@ class VectorStore:
 
     def wipe_collection(self) -> None:
         """Drop the current collection."""
-        try:
+        with suppress(Exception):
             self.client.delete_collection(collection_name=self.collection)
-        except Exception:
-            pass

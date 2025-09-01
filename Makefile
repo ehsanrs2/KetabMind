@@ -1,25 +1,31 @@
-PYTHON=python3.11
+PY=poetry run
+
+.PHONY: setup lint test run up down index-sample qa
 
 setup:
-poetry install
+	poetry install
+	pre-commit install || true
 
 lint:
-poetry run pre-commit run --all-files
+	$(PY) ruff check .
+	$(PY) ruff format --check .
+	$(PY) mypy .
 
 test:
-poetry run pytest
+	$(PY) pytest -q
 
 run:
-poetry run uvicorn apps.api.main:app --reload
+	$(PY) uvicorn apps.api.main:app --reload
 
 up:
-docker-compose up -d
+	docker compose up -d
 
 down:
-docker-compose down
+	docker compose down
 
 index-sample:
-poetry run ${PYTHON} scripts/index_sample.py
+	$(PY) python -m scripts.index_sample
 
 qa:
-curl -X POST "http://localhost:8000/query?q=test"
+	$(PY) python -m core.eval.offline_eval --ds data/eval.jsonl || true
+
