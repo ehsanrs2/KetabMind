@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import asdict
 
 from core.retrieve.retriever import Retriever
@@ -25,3 +26,14 @@ def answer(query: str, top_k: int = 8) -> dict[str, object]:
         "contexts": [asdict(c) for c in contexts],
         "debug": {"prompt": prompt},
     }
+
+
+def stream_answer(query: str, top_k: int = 8) -> Iterable[dict[str, object]]:
+    """Yield incremental answer tokens followed by final result."""
+    contexts = _retriever.retrieve(query, top_k)
+    prompt = build_prompt(query, contexts)
+    llm = get_llm()
+    text = llm.generate(prompt)
+    for token in text.split():
+        yield {"delta": f"{token} "}
+    yield {"answer": text, "contexts": [asdict(c) for c in contexts]}
