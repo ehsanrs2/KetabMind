@@ -14,6 +14,10 @@ Embedding models
   - `small` (BGE small, 384-dim)
   - `base` (BGE base, 768-dim)
 
+LLM backend
+
+- Set `LLM_BACKEND` to select the language model backend (only `mock` for now).
+
 Querying
 
 - POST `/query` with `{ "q": "your question", "top_k": 5 }`.
