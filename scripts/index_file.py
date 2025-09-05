@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import os
 import uuid
 from pathlib import Path
+
+import structlog
 
 from core.chunk.chunker import sliding_window_chunks
 from core.config import settings
 from core.embed import get_embedder
 from core.ingest.pdf_to_text import pdf_to_pages
 from core.vector.qdrant_client import VectorStore
+
+log = structlog.get_logger()
 
 
 def _book_id_from_path(path: Path) -> str:
@@ -19,7 +24,7 @@ def _read_text_file(path: Path) -> list[tuple[str, int]]:
     return [(text, 1)]
 
 
-def index_path(in_path: Path) -> None:
+def index_path(in_path: Path, collection: str | None = None) -> None:
     if not in_path.exists():
         raise SystemExit(f"File not found: {in_path}")
 
@@ -38,7 +43,7 @@ def index_path(in_path: Path) -> None:
         mode=settings.qdrant_mode,
         location=settings.qdrant_location,
         url=settings.qdrant_url,
-        collection=settings.qdrant_collection,
+        collection=collection or settings.qdrant_collection,
         vector_size=getattr(embedder, "dim", len(embedder.embed(["test"])[0])),
     )
     store.ensure_collection()
@@ -78,7 +83,13 @@ def index_path(in_path: Path) -> None:
     vecs = np.asarray(embedder.embed([p["text"] for p in payloads]), dtype=np.float32)
     store.upsert(ids=ids, vectors=vecs, payloads=payloads)
 
-    print(f"Indexed book={book_id} new={new_count} skipped={skipped_count} total={len(ids)}")
+    log.info(
+        "indexed",
+        book_id=book_id,
+        new=new_count,
+        skipped=skipped_count,
+        total=len(ids),
+    )
 
 
 def main() -> None:
@@ -86,9 +97,14 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("path", help="Input file (.pdf or .txt)")
+    parser.add_argument(
+        "--collection",
+        default=os.getenv("QDRANT_COLLECTION", settings.qdrant_collection),
+        help="Qdrant collection name",
+    )
     args = parser.parse_args()
     in_path = Path(args.path)
-    index_path(in_path)
+    index_path(in_path, collection=args.collection)
 
 
 if __name__ == "__main__":
