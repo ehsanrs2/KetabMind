@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 
 app = typer.Typer(help="PDF to JSONL pages extractor")
 

@@ -12,9 +12,7 @@ def test_retriever_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
         def embed(self, texts: list[str]) -> list[list[float]]:
             return [[0.0]]
 
-    monkeypatch.setattr(
-        "core.retrieve.retriever.get_embedder", lambda: DummyEmbedder()
-    )
+    monkeypatch.setattr("core.retrieve.retriever.get_embedder", lambda: DummyEmbedder())
 
     class Hit:
         def __init__(self, payload: dict[str, str | int], score: float) -> None:
