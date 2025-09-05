@@ -9,3 +9,5 @@ qdrant/
 qdrant_local/
 qdrant_storage/
 data.json
+node_modules/
+.next/
