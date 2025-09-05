@@ -39,9 +39,7 @@ class Retriever:
         embedder = get_embedder()
         qvec = embedder.embed([query])[0]
         store = self.store or VectorStore()
-        hits = store.client.search(
-            collection_name=store.collection, query_vector=qvec, limit=k
-        )
+        hits = store.client.search(collection_name=store.collection, query_vector=qvec, limit=k)
 
         q_tokens = self._tokenize(query)
         results: list[ScoredChunk] = []
