@@ -17,11 +17,10 @@ class ScoredChunk:
 
 
 class Retriever:
-    """k-NN retriever with simple lexical reranking."""
+    """k-NN retriever with lexical overlap reranking."""
 
     def __init__(self, top_k: int = 8) -> None:
         self.top_k = top_k
-        # Allow test to override the store if needed
         self.store: VectorStore | None = None
 
     def _tokenize(self, text: str) -> set[str]:
@@ -38,24 +37,23 @@ class Retriever:
         k = top_k or self.top_k
         embedder = get_embedder()
         qvec = embedder.embed([query])[0]
-
         store = self.store or VectorStore()
         hits = store.query(qvec, top_k=k)
 
         q_tokens = self._tokenize(query)
         results: list[ScoredChunk] = []
-        for p in hits:
-            text = p.get("text", "")
+        for payload in hits:
+            text = payload.get("text", "")
             score = self._overlap_score(q_tokens, self._tokenize(text))
             results.append(
                 ScoredChunk(
                     text=text,
-                    book_id=p.get("book_id", ""),
-                    page_start=int(p.get("page_start", -1)),
-                    page_end=int(p.get("page_end", -1)),
+                    book_id=payload.get("book_id", ""),
+                    page_start=int(payload.get("page_start", -1)),
+                    page_end=int(payload.get("page_end", -1)),
                     score=score,
                 )
             )
 
         results.sort(key=lambda r: r.score, reverse=True)
-        return results
+        return results[:k]
