@@ -8,6 +8,8 @@ Set `EMBED_MODEL` in `.env` to choose the embedding backend:
 
 The first run with a real model downloads roughly 400 MB of weights.
 
+Set `LLM_BACKEND` in `.env` to choose the LLM backend (only `mock` is available).
+
 Set `QDRANT_LOCATION` in `.env` for local vector storage:
 
 ```
