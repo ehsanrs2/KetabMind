@@ -1,6 +1,5 @@
 """Retrieve documents using the vector store."""
 
-
 from ..embed.base import Embedder
 from ..vector import qdrant
 from ..vector.qdrant import VectorStore

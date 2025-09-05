@@ -1,16 +1,12 @@
-"""Simple Self-RAG validation utilities.
-
-Detect hallucinations by checking citation coverage of the answer
-against provided retrieved contexts.
-"""
+"""Detect hallucinations by checking citation coverage of the answer
+against provided retrieved contexts."""
 
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 from core.retrieve.retriever import ScoredChunk
-
 
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
 
@@ -55,7 +51,6 @@ def _coverage(answer: str, contexts_texts: list[str], match_threshold: float = 0
         for ct in ctx_tokenized:
             if not ct:
                 continue
-            # Jaccard similarity
             num = len(st & ct)
             den = len(st | ct) or 1
             score = num / den
@@ -74,4 +69,3 @@ def validate(answer: str, contexts: list[ScoredChunk], *, coverage_threshold: fl
     ctx_texts = [c.text for c in contexts]
     cov = _coverage(answer, ctx_texts)
     return cov >= coverage_threshold
-

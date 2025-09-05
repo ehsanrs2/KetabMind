@@ -16,5 +16,8 @@ class Settings(BaseSettings):
     chunk_size: int = 800
     chunk_overlap: int = 200
 
+    ingest_header_lines: int = 0
+    ingest_footer_lines: int = 0
+
 
 settings = Settings()
