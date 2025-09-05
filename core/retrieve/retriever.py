@@ -14,6 +14,7 @@ class ScoredChunk:
     page_start: int
     page_end: int
     score: float
+    distance: float = 0.0
 
 
 class Retriever:
@@ -38,20 +39,27 @@ class Retriever:
         embedder = get_embedder()
         qvec = embedder.embed([query])[0]
         store = self.store or VectorStore()
-        hits = store.query(qvec, top_k=k)
+        hits = store.client.search(
+            collection_name=store.collection, query_vector=qvec, limit=k
+        )
 
         q_tokens = self._tokenize(query)
         results: list[ScoredChunk] = []
-        for payload in hits:
+        for hit in hits:
+            payload = getattr(hit, "payload", {})
             text = payload.get("text", "")
-            score = self._overlap_score(q_tokens, self._tokenize(text))
+            sim = float(getattr(hit, "score", 0.0))
+            d = 1 - sim
+            overlap = self._overlap_score(q_tokens, self._tokenize(text))
+            final = 0.7 * sim + 0.3 * overlap
             results.append(
                 ScoredChunk(
                     text=text,
                     book_id=payload.get("book_id", ""),
                     page_start=int(payload.get("page_start", -1)),
                     page_end=int(payload.get("page_end", -1)),
-                    score=score,
+                    score=final,
+                    distance=d,
                 )
             )
 
