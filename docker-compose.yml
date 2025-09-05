@@ -10,7 +10,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: apps/api/Dockerfile
     environment:
       - QDRANT_MODE=remote
       - QDRANT_URL=http://qdrant:6333
