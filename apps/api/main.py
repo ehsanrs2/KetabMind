@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -49,3 +50,15 @@ def index(req: IndexRequest) -> dict[str, Any]:
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"new": new, "skipped": skipped, "collection": collection}
+
+
+@app.post("/upload")
+async def upload(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
+    tmp_dir = Path(tempfile.gettempdir())
+    dest = tmp_dir / Path(file.filename).name
+    dest.write_bytes(await file.read())
+    try:
+        new, skipped, collection = index_path(dest)
+    except SystemExit as exc:  # invalid path or type
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"new": new, "skipped": skipped, "collection": collection, "path": str(dest)}
