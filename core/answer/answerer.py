@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from dataclasses import asdict
 
 from core.retrieve.retriever import Retriever
+from core.self_rag.validator import requires_second_pass
 
 from .llm import get_llm
 from .template import build_prompt
@@ -21,6 +22,11 @@ def answer(query: str, top_k: int = 8) -> dict[str, object]:
     if os.getenv("LLM_BACKEND") == "mock":
         llm = get_llm()
         answer_text = llm.generate(prompt)
+        if requires_second_pass(answer_text, contexts):
+            expanded = f"{query} explain further"
+            contexts = _retriever.retrieve(expanded, top_k)
+            prompt = build_prompt(query, contexts)
+            answer_text = llm.generate(prompt)
     return {
         "answer": answer_text,
         "contexts": [asdict(c) for c in contexts],

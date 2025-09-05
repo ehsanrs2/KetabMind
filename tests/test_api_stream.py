@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from core.answer import answerer
 
 sys.modules["core.index"] = types.SimpleNamespace(index_path=lambda *args, **kwargs: None)
-from apps.api.main import app
+from apps.api.main import app  # noqa: E402
 
 
 class DummyRetriever:

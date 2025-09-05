@@ -61,11 +61,25 @@ def _coverage(answer: str, contexts_texts: list[str], match_threshold: float = 0
     return supported / max(1, len(sents))
 
 
-def validate(answer: str, contexts: list[ScoredChunk], *, coverage_threshold: float = 0.4) -> bool:
-    """Return True if answer is sufficiently grounded in contexts.
+def citation_coverage(answer: str, contexts: Iterable[ScoredChunk]) -> float:
+    """Compute citation coverage of *answer* against *contexts*."""
 
-    If citation coverage is below the given threshold, return False.
-    """
     ctx_texts = [c.text for c in contexts]
-    cov = _coverage(answer, ctx_texts)
+    return _coverage(answer, ctx_texts)
+
+
+def requires_second_pass(
+    answer: str,
+    contexts: Iterable[ScoredChunk],
+    threshold: float = 0.5,
+) -> bool:
+    """Return True if coverage falls below *threshold*."""
+
+    return citation_coverage(answer, contexts) < threshold
+
+
+def validate(answer: str, contexts: list[ScoredChunk], *, coverage_threshold: float = 0.4) -> bool:
+    """Return True if answer is sufficiently grounded in contexts."""
+
+    cov = citation_coverage(answer, contexts)
     return cov >= coverage_threshold
