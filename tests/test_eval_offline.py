@@ -41,4 +41,3 @@ def test_offline_eval_prints_metrics() -> None:
             eval_main()
         out = buf.getvalue()
         assert "EM:" in out and "F1:" in out and "Coverage:" in out
-

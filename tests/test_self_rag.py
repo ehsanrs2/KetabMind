@@ -18,4 +18,3 @@ def test_validator_accepts_with_overlap() -> None:
     answer = "The sky is blue."
     ctx = _mk_ctx(["A clear blue sky is visible."])
     assert validate(answer, ctx, coverage_threshold=0.2) is True
-

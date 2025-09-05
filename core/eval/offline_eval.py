@@ -15,7 +15,6 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 def _normalize(s: str) -> list[str]:
@@ -121,4 +120,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.index_file import index_path
+from core.index import index_path
 
 
 def main() -> None:
