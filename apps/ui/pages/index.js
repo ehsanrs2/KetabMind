@@ -13,7 +13,17 @@ export default function Home() {
     }
     const form = new FormData();
     form.append("file", file);
-    await fetch(`${apiUrl}/upload`, { method: "POST", body: form });
+    try {
+      const res = await fetch(`${apiUrl}/upload`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        console.error("upload failed", res.statusText);
+      }
+    } catch (err) {
+      console.error("upload error", err);
+    }
   }
 
   async function onAsk() {
