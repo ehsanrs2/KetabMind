@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -14,6 +15,13 @@ from core.answer.answerer import answer, stream_answer
 from core.index import index_path
 
 app = FastAPI(title="KetabMind API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class QueryRequest(BaseModel):
@@ -55,7 +63,8 @@ def index(req: IndexRequest) -> dict[str, Any]:
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
     tmp_dir = Path(tempfile.gettempdir())
-    dest = tmp_dir / Path(file.filename).name
+    filename = Path(file.filename or "upload")
+    dest = tmp_dir / filename.name
     dest.write_bytes(await file.read())
     try:
         new, skipped, collection = index_path(dest)
