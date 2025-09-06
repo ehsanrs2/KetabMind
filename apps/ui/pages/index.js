@@ -27,14 +27,22 @@ export default function Home() {
   }
 
   async function onAsk() {
-    const res = await fetch(`${apiUrl}/query`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-    });
-    const data = await res.json();
-    setAnswer(data.answer || "");
-    setContexts(data.contexts || []);
+    try {
+      const res = await fetch(`${apiUrl}/query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      if (!res.ok) {
+        console.error("query failed", res.statusText);
+        return;
+      }
+      const data = await res.json();
+      setAnswer(data.answer || "");
+      setContexts(data.contexts || []);
+    } catch (err) {
+      console.error("query error", err);
+    }
   }
 
   return (
