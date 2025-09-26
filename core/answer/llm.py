@@ -11,6 +11,18 @@ from collections.abc import Iterator
 import httpx
 
 
+class LLMError(RuntimeError):
+    """Base exception for LLM related failures."""
+
+
+class LLMTimeoutError(LLMError):
+    """Raised when the LLM backend does not respond in time."""
+
+
+class LLMServiceError(LLMError):
+    """Raised when the LLM backend returns an unexpected error."""
+
+
 class LLM(ABC):
     """Minimal language model interface."""
 
@@ -98,9 +110,12 @@ class OllamaLLM(LLM):
             response = httpx.post(self._endpoint, json=payload, timeout=self._timeout)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
-            raise TimeoutError("Timed out while waiting for Ollama response") from exc
+            raise LLMTimeoutError("Timed out while waiting for Ollama response") from exc
+        except httpx.HTTPStatusError as exc:  # pragma: no cover - defensive
+            message = exc.response.text or "Ollama returned an HTTP error"
+            raise LLMServiceError(message) from exc
         except httpx.HTTPError as exc:  # pragma: no cover - defensive
-            raise RuntimeError("Ollama request failed") from exc
+            raise LLMServiceError("Failed to contact Ollama") from exc
         data = response.json()
         return str(data.get("response", ""))
 
@@ -127,9 +142,12 @@ class OllamaLLM(LLM):
                         if chunk.get("done"):
                             break
             except httpx.TimeoutException as exc:
-                raise TimeoutError("Timed out while streaming from Ollama") from exc
+                raise LLMTimeoutError("Timed out while streaming from Ollama") from exc
+            except httpx.HTTPStatusError as exc:  # pragma: no cover - defensive
+                message = exc.response.text or "Ollama returned an HTTP error"
+                raise LLMServiceError(message) from exc
             except httpx.HTTPError as exc:  # pragma: no cover - defensive
-                raise RuntimeError("Ollama streaming request failed") from exc
+                raise LLMServiceError("Ollama streaming request failed") from exc
 
         return iterator()
 
