@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+from collections.abc import Callable
+from typing import Any, TypeVar, cast
 
 import pytest
 
+F = TypeVar("F", bound=Callable[..., Any])
+not_slow = cast(Callable[[F], F], pytest.mark.not_slow)
 
-@pytest.mark.not_slow  # type: ignore[misc]
+
+@not_slow
 def test_basic_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("EMBED_MODEL", "mock")
     monkeypatch.setenv("QDRANT_MODE", "local")

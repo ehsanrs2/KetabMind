@@ -19,7 +19,7 @@ def get_embedder() -> Embedder:
         return MockEmbedder()
     # Lazy import to avoid heavy deps unless requested
     try:
-        from .bge import BgeEmbedder  # type: ignore
+        from .bge import BgeEmbedder
     except Exception as exc:  # pragma: no cover - import guard
         raise RuntimeError(
             "BGE requires sentence-transformers. Install it or set EMBED_MODEL=mock."

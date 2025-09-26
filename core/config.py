@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import TYPE_CHECKING
+
+from pydantic_settings import SettingsConfigDict
+
+if TYPE_CHECKING:
+
+    class BaseSettingsProto:
+        model_config: SettingsConfigDict
+
+else:  # pragma: no cover - runtime import
+    from pydantic_settings import BaseSettings as BaseSettingsProto
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettingsProto):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
     qdrant_mode: str = "local"  # local | remote

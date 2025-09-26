@@ -24,9 +24,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import typer
 
@@ -108,8 +109,11 @@ def evaluate_path(path: Path) -> EvalResult:
 
 app = typer.Typer()
 
+F = TypeVar("F", bound=Callable[..., Any])
+command = cast(Callable[[F], F], app.command())
 
-@app.command()
+
+@command
 def main(
     ds: Path = typer.Option(..., "--ds", help="Path to JSONL dataset"),  # noqa: B008
 ) -> None:

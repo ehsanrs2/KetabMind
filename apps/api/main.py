@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +13,14 @@ from pydantic import BaseModel
 
 from core.answer.answerer import answer, stream_answer
 from core.index import index_path
+
+if TYPE_CHECKING:
+
+    class BaseModelProto:
+        pass
+
+else:  # pragma: no cover - runtime import
+    BaseModelProto = BaseModel
 
 app = FastAPI(title="KetabMind API")
 app.add_middleware(
@@ -23,23 +31,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+F = TypeVar("F", bound=Callable[..., Any])
 
-class QueryRequest(BaseModel):
+
+def _get(path: str) -> Callable[[F], F]:
+    return cast(Callable[[F], F], app.get(path))
+
+
+def _post(path: str) -> Callable[[F], F]:
+    return cast(Callable[[F], F], app.post(path))
+
+
+class QueryRequest(BaseModelProto):
     q: str
     top_k: int = 3
 
 
-class IndexRequest(BaseModel):
+class IndexRequest(BaseModelProto):
     path: str
     collection: str | None = None
 
 
-@app.get("/health")
+@_get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/query")
+@_post("/query")
 def query(req: QueryRequest, stream: bool = False) -> Any:
     if stream:
 
@@ -51,7 +69,7 @@ def query(req: QueryRequest, stream: bool = False) -> Any:
     return answer(req.q, top_k=req.top_k)
 
 
-@app.post("/index")
+@_post("/index")
 def index(req: IndexRequest) -> dict[str, Any]:
     try:
         new, skipped, collection = index_path(Path(req.path), collection=req.collection)
@@ -60,7 +78,7 @@ def index(req: IndexRequest) -> dict[str, Any]:
     return {"new": new, "skipped": skipped, "collection": collection}
 
 
-@app.post("/upload")
+@_post("/upload")
 async def upload(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
     tmp_dir = Path(tempfile.gettempdir())
     filename = Path(file.filename or "upload")
