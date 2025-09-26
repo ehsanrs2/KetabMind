@@ -33,6 +33,14 @@ mypy = "^1.10.0"
 types-requests = "^2.32.0.20240712"
 reportlab = "^4.1.0"
 
+[tool.poetry.group.gpu.dependencies]
+transformers = ">=4.42"
+accelerate = "*"
+bitsandbytes = "*"
+sentencepiece = "*"
+safetensors = "*"
+tokenizers = "*"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
