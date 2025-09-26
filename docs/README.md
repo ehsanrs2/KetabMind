@@ -27,6 +27,17 @@ LLM_MODEL=mistral:7b-instruct-q4_K_M
 
 Note: for GPU backend see next steps.
 
+## GPU setup (tested on RTX 3060)
+
+1. Install the optional GPU dependencies:
+   - `poetry install --with gpu`
+   - or with pip: `pip install .[gpu]`
+2. Verify CUDA visibility:
+   - `python -c "import torch; print(torch.cuda.is_available())"`
+3. Recommended starter models:
+   - `microsoft/Phi-3-mini-4k-instruct` (fast on 12 GB VRAM)
+   - `mistralai/Mistral-7B-Instruct` (use 4-bit loading on 12 GB VRAM)
+
 Set `QDRANT_LOCATION` in `.env` for local vector storage:
 
 ```
