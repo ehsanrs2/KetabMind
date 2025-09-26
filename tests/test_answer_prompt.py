@@ -14,8 +14,8 @@ def _ctx() -> list[ScoredChunk]:
 def test_prompt_has_question_count_and_citation_hint() -> None:
     q = "What is X?"
     ctx = _ctx()
-    prompt = build_prompt(q, ctx)
+    prompt = build_prompt(q, ctx, "System test")
     assert q in prompt
     assert str(len(ctx)) in prompt
-    assert "cite" in prompt.lower()
-    assert "(b1 1-2)" in prompt
+    assert "[book_id:page_start-page_end]" in prompt
+    assert "(b1:1-2)" in prompt

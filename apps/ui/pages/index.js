@@ -31,7 +31,7 @@ export default function Home() {
       const res = await fetch(`${apiUrl}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ q: question }),
       });
       if (!res.ok) {
         console.error("query failed", res.statusText);
