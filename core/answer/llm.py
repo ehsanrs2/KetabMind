@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
@@ -67,6 +68,13 @@ class MockLLM(LLM):
 class OllamaLLM(LLM):
     """LLM implementation backed by an Ollama server."""
 
+    _timeout_errors = (
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+    )
+
     def __init__(self) -> None:
         self._host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
         self._model = os.getenv("LLM_MODEL", "mistral:7b-instruct-q4_K_M")
@@ -76,6 +84,8 @@ class OllamaLLM(LLM):
         timeout_value = float(os.getenv("LLM_REQUEST_TIMEOUT", "60"))
         self._timeout = httpx.Timeout(timeout_value)
         self._endpoint = f"{self._host}/api/generate"
+        self._client = httpx.Client(timeout=self._timeout, trust_env=False)
+        atexit.register(self._client.close)
 
     def generate(self, prompt: str, stream: bool = False) -> str | Iterator[str]:
         options: dict[str, object] = {
@@ -95,9 +105,9 @@ class OllamaLLM(LLM):
 
     def _generate_once(self, payload: dict[str, object]) -> str:
         try:
-            response = httpx.post(self._endpoint, json=payload, timeout=self._timeout)
+            response = self._client.post(self._endpoint, json=payload)
             response.raise_for_status()
-        except httpx.TimeoutException as exc:
+        except self._timeout_errors as exc:
             raise TimeoutError("Timed out while waiting for Ollama response") from exc
         except httpx.HTTPError as exc:  # pragma: no cover - defensive
             raise RuntimeError("Ollama request failed") from exc
@@ -107,11 +117,10 @@ class OllamaLLM(LLM):
     def _stream_generate(self, payload: dict[str, object]) -> Iterator[str]:
         def iterator() -> Iterator[str]:
             try:
-                with httpx.stream(
+                with self._client.stream(
                     "POST",
                     self._endpoint,
                     json=payload,
-                    timeout=self._timeout,
                 ) as response:
                     response.raise_for_status()
                     for line in response.iter_lines():
@@ -126,7 +135,7 @@ class OllamaLLM(LLM):
                             yield str(delta)
                         if chunk.get("done"):
                             break
-            except httpx.TimeoutException as exc:
+            except self._timeout_errors as exc:
                 raise TimeoutError("Timed out while streaming from Ollama") from exc
             except httpx.HTTPError as exc:  # pragma: no cover - defensive
                 raise RuntimeError("Ollama streaming request failed") from exc

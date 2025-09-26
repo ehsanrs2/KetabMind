@@ -23,6 +23,14 @@ class Settings(BaseSettingsProto):
 
     embed_model: str = "mock"  # mock|small|base
 
+    llm_backend: str = "mock"
+    llm_model: str = "mock"
+    llm_max_input_tokens: int = 4096
+    llm_max_new_tokens: int = 256
+    llm_temperature: float = 0.2
+    llm_top_p: float = 0.95
+    ollama_host: str = "http://localhost:11434"
+
     chunk_size: int = 800
     chunk_overlap: int = 200
 

@@ -59,12 +59,22 @@ def test_ollama_llm_non_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch)
     captured_payload: dict[str, Any] = {}
 
-    def fake_post(url: str, *, json: dict[str, Any], timeout: Any) -> _DummyResponse:
-        assert url == "http://localhost:11434/api/generate"
-        captured_payload.update(json)
-        return _DummyResponse({"response": "hello world"})
+    class _FakeClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            assert kwargs.get("trust_env") is False
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+        def post(self, url: str, json: dict[str, Any]) -> _DummyResponse:
+            assert url == "http://localhost:11434/api/generate"
+            captured_payload.update(json)
+            return _DummyResponse({"response": "hello world"})
+
+        def stream(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover - safety
+            raise AssertionError("stream should not be called in non-stream mode")
+
+        def close(self) -> None:  # pragma: no cover - no-op
+            return None
+
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
 
     llm = OllamaLLM()
     result = llm.generate("prompt text", stream=False)
@@ -79,19 +89,29 @@ def test_ollama_llm_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch)
     payloads: list[dict[str, Any]] = []
 
-    def fake_stream(method: str, url: str, *, json: dict[str, Any], timeout: Any) -> _DummyStream:
-        assert method == "POST"
-        assert url == "http://localhost:11434/api/generate"
-        payloads.append(json)
-        chunks = [
-            json_module.dumps({"response": "Hello", "done": False}),
-            "",
-            json_module.dumps({"response": " world", "done": False}),
-            json_module.dumps({"response": "!", "done": True}),
-        ]
-        return _DummyStream(chunks)
+    class _FakeClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            assert kwargs.get("trust_env") is False
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+        def post(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover - safety
+            raise AssertionError("post should not be called in stream mode")
+
+        def stream(self, method: str, url: str, *, json: dict[str, Any]) -> _DummyStream:
+            assert method == "POST"
+            assert url == "http://localhost:11434/api/generate"
+            payloads.append(json)
+            chunks = [
+                json_module.dumps({"response": "Hello", "done": False}),
+                "",
+                json_module.dumps({"response": " world", "done": False}),
+                json_module.dumps({"response": "!", "done": True}),
+            ]
+            return _DummyStream(chunks)
+
+        def close(self) -> None:  # pragma: no cover - no-op
+            return None
+
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
 
     llm = OllamaLLM()
     stream = llm.generate("prompt text", stream=True)
