@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+from collections.abc import Iterator
 from types import ModuleType
 from typing import Any, cast
 
@@ -10,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.answer import answerer
+from core.answer.llm import LLMTimeoutError
 
 
 def _noop_index_path(*args: object, **kwargs: object) -> None:
@@ -35,6 +37,23 @@ class DummyLLM:
         return "foo bar baz"
 
 
+class TimeoutLLM:
+    def generate(self, prompt: str, stream: bool = False) -> str | Iterator[str]:
+        raise LLMTimeoutError("timed out")
+
+
+class StreamingTimeoutLLM:
+    def generate(self, prompt: str, stream: bool = False) -> str | Iterator[str]:
+        if not stream:
+            raise LLMTimeoutError("timed out")
+
+        def iterator() -> Iterator[str]:
+            raise LLMTimeoutError("timed out")
+            yield ""  # pragma: no cover - unreachable
+
+        return iterator()
+
+
 def test_query_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(answerer, "_retriever", DummyRetriever())
     monkeypatch.setattr(answerer, "get_llm", lambda: DummyLLM())
@@ -47,3 +66,28 @@ def test_query_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     assert frames[-1]["answer"] == "foo bar baz"
     deltas = [f for f in frames[:-1] if "delta" in f]
     assert len(deltas) >= 2
+
+
+def test_query_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(answerer, "_retriever", DummyRetriever())
+    monkeypatch.setattr(answerer, "get_llm", lambda: TimeoutLLM())
+    _ensure_core_index_stub()
+    from apps.api.main import app  # noqa: PLC0415
+
+    client = TestClient(app)
+    resp = client.post("/query", json={"q": "x", "top_k": 2})
+    assert resp.status_code == 504
+    assert resp.json()["error"]["type"] == "timeout"
+
+
+def test_query_stream_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(answerer, "_retriever", DummyRetriever())
+    monkeypatch.setattr(answerer, "get_llm", lambda: StreamingTimeoutLLM())
+    _ensure_core_index_stub()
+    from apps.api.main import app  # noqa: PLC0415
+
+    client = TestClient(app)
+    with client.stream("POST", "/query?stream=true", json={"q": "x", "top_k": 2}) as resp:
+        frames = [json.loads(line) for line in resp.iter_lines() if line]
+    assert frames[-1]["error"]["type"] == "timeout"
+    assert frames[-1]["final"] is True
