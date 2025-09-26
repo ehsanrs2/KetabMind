@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+
+import httpx
 
 
 class LLM(ABC):
@@ -61,13 +64,85 @@ class MockLLM(LLM):
             yield segment + "\n"
 
 
+class OllamaLLM(LLM):
+    """LLM implementation backed by an Ollama server."""
+
+    def __init__(self) -> None:
+        self._host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+        self._model = os.getenv("LLM_MODEL", "mistral:7b-instruct-q4_K_M")
+        self._temperature = float(os.getenv("LLM_TEMPERATURE", "0.2"))
+        self._top_p = float(os.getenv("LLM_TOP_P", "0.95"))
+        self._max_new_tokens = int(os.getenv("LLM_MAX_NEW_TOKENS", "256"))
+        timeout_value = float(os.getenv("LLM_REQUEST_TIMEOUT", "60"))
+        self._timeout = httpx.Timeout(timeout_value)
+        self._endpoint = f"{self._host}/api/generate"
+
+    def generate(self, prompt: str, stream: bool = False) -> str | Iterator[str]:
+        options: dict[str, object] = {
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "num_predict": self._max_new_tokens,
+        }
+        payload: dict[str, object] = {
+            "model": self._model,
+            "prompt": prompt,
+            "options": options,
+        }
+        if stream:
+            payload["stream"] = True
+            return self._stream_generate(payload)
+        return self._generate_once(payload)
+
+    def _generate_once(self, payload: dict[str, object]) -> str:
+        try:
+            response = httpx.post(self._endpoint, json=payload, timeout=self._timeout)
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise TimeoutError("Timed out while waiting for Ollama response") from exc
+        except httpx.HTTPError as exc:  # pragma: no cover - defensive
+            raise RuntimeError("Ollama request failed") from exc
+        data = response.json()
+        return str(data.get("response", ""))
+
+    def _stream_generate(self, payload: dict[str, object]) -> Iterator[str]:
+        def iterator() -> Iterator[str]:
+            try:
+                with httpx.stream(
+                    "POST",
+                    self._endpoint,
+                    json=payload,
+                    timeout=self._timeout,
+                ) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = chunk.get("response", "")
+                        if delta:
+                            yield str(delta)
+                        if chunk.get("done"):
+                            break
+            except httpx.TimeoutException as exc:
+                raise TimeoutError("Timed out while streaming from Ollama") from exc
+            except httpx.HTTPError as exc:  # pragma: no cover - defensive
+                raise RuntimeError("Ollama streaming request failed") from exc
+
+        return iterator()
+
+
 def get_llm() -> LLM:
     """Instantiate the configured LLM backend."""
 
     backend = os.getenv("LLM_BACKEND", "mock").lower()
     if backend == "mock":
         return MockLLM()
-    if backend in {"ollama", "transformers"}:
+    if backend == "ollama":
+        return OllamaLLM()
+    if backend == "transformers":
         raise NotImplementedError(f"LLM backend '{backend}' is not implemented yet.")
     raise ValueError(f"Unsupported LLM_BACKEND: {backend}")
 
