@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypeVar, cast
 
 import typer
 from pypdf import PdfReader
 
 app = typer.Typer(help="PDF to JSONL pages extractor")
+
+F = TypeVar("F", bound=Callable[..., Any])
+command = cast(Callable[[F], F], app.command())
 
 
 @dataclass
@@ -47,7 +51,7 @@ def write_jsonl(pages: Iterable[Page], out_path: Path) -> None:
             f.write(json.dumps(p.__dict__, ensure_ascii=False) + "\n")
 
 
-@app.command()
+@command
 def main(
     in_path: str = typer.Option(..., "--in", help="Input PDF path"),
     out_path: str = typer.Option(..., "--out", help="Output JSONL path"),

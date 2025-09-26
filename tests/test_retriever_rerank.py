@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from collections.abc import Sequence
 
 import pytest
 
-from core.retrieve.retriever import Retriever
+from core.retrieve.retriever import Retriever, SearchClient, VectorStoreLike
 
 
 def test_retriever_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -19,8 +19,10 @@ def test_retriever_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
             self.payload = payload
             self.score = score
 
-    class DummyClient:
-        def search(self, collection_name: str, query_vector: list[float], limit: int):
+    class DummyClient(SearchClient):
+        def search(
+            self, collection_name: str, query_vector: Sequence[float], limit: int
+        ) -> list[Hit]:
             return [
                 Hit(
                     {
@@ -42,7 +44,12 @@ def test_retriever_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
                 ),
             ]
 
-    store = SimpleNamespace(client=DummyClient(), collection="c")
+    class DummyStore:
+        def __init__(self) -> None:
+            self.client: SearchClient = DummyClient()
+            self.collection = "c"
+
+    store: VectorStoreLike = DummyStore()
     r = Retriever(top_k=2)
     r.store = store
     res = r.retrieve("foo bar", top_k=2)

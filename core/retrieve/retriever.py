@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any, Protocol, cast
 
 from core.embed import get_embedder
 from core.vector.qdrant import VectorStore
@@ -22,7 +24,7 @@ class Retriever:
 
     def __init__(self, top_k: int = 8) -> None:
         self.top_k = top_k
-        self.store: VectorStore | None = None
+        self.store: VectorStoreLike | None = None
 
     def _tokenize(self, text: str) -> set[str]:
         return set(re.findall(r"[A-Za-z0-9]+", text.lower()))
@@ -44,16 +46,17 @@ class Retriever:
         q_tokens = self._tokenize(query)
         results: list[ScoredChunk] = []
         for hit in hits:
-            payload = getattr(hit, "payload", {})
-            text = payload.get("text", "")
-            sim = float(getattr(hit, "score", 0.0))
+            raw_payload = getattr(hit, "payload", {}) or {}
+            payload = cast_mapping(raw_payload)
+            text = str(payload.get("text", ""))
+            sim = float(getattr(hit, "score", 0.0) or 0.0)
             d = 1 - sim
             overlap = self._overlap_score(q_tokens, self._tokenize(text))
             final = 0.7 * sim + 0.3 * overlap
             results.append(
                 ScoredChunk(
                     text=text,
-                    book_id=payload.get("book_id", ""),
+                    book_id=str(payload.get("book_id", "")),
                     page_start=int(payload.get("page_start", -1)),
                     page_end=int(payload.get("page_end", -1)),
                     score=final,
@@ -63,3 +66,22 @@ class Retriever:
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:k]
+
+
+class SearchClient(Protocol):
+    def search(
+        self, collection_name: str, query_vector: Sequence[float], limit: int
+    ) -> Sequence[Any]: ...
+
+
+class VectorStoreLike(Protocol):
+    client: SearchClient
+    collection: str
+
+
+def cast_mapping(value: object) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return cast(Mapping[str, Any], value)
+    if isinstance(value, dict):  # pragma: no cover - defensive, dict is Mapping
+        return cast(Mapping[str, Any], value)
+    return cast(Mapping[str, Any], {})
