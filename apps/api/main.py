@@ -6,12 +6,13 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from core.answer.answerer import answer, stream_answer
+from core.answer.llm import LLMError, LLMTimeoutError
 from core.index import index_path
 
 if TYPE_CHECKING:
@@ -47,6 +48,23 @@ class QueryRequest(BaseModelProto):
     top_k: int = 3
 
 
+def _llm_error_payload(exc: LLMError) -> tuple[int, dict[str, Any]]:
+    if isinstance(exc, LLMTimeoutError):
+        return (
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            {"error": {"type": "timeout", "message": str(exc)}},
+        )
+    return (
+        status.HTTP_502_BAD_GATEWAY,
+        {"error": {"type": "llm_error", "message": str(exc)}},
+    )
+
+
+def _llm_error_response(exc: LLMError) -> JSONResponse:
+    status_code, payload = _llm_error_payload(exc)
+    return JSONResponse(status_code=status_code, content=payload)
+
+
 class IndexRequest(BaseModelProto):
     path: str
     collection: str | None = None
@@ -58,15 +76,27 @@ def health() -> dict[str, str]:
 
 
 @_post("/query")
-def query(req: QueryRequest, stream: bool = False) -> Any:
+def query(req: QueryRequest, stream: bool = Query(False)) -> Any:
     if stream:
+        try:
+            chunks = stream_answer(req.q, top_k=req.top_k)
+        except LLMError as exc:
+            return _llm_error_response(exc)
 
         def gen() -> Iterable[str]:
-            for chunk in stream_answer(req.q, top_k=req.top_k):
-                yield json.dumps(chunk) + "\n"
+            try:
+                for chunk in chunks:
+                    yield json.dumps(chunk) + "\n"
+            except LLMError as exc:  # pragma: no cover - defensive
+                _, payload = _llm_error_payload(exc)
+                payload["final"] = True
+                yield json.dumps(payload) + "\n"
 
         return StreamingResponse(gen(), media_type="application/json")
-    return answer(req.q, top_k=req.top_k)
+    try:
+        return answer(req.q, top_k=req.top_k)
+    except LLMError as exc:
+        return _llm_error_response(exc)
 
 
 @_post("/index")

@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from core.answer.llm import OllamaLLM
+from core.answer.llm import LLMServiceError, LLMTimeoutError, OllamaLLM
 
 
 class _DummyResponse:
@@ -102,3 +102,44 @@ def test_ollama_llm_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(deltas) >= 2
     assert "".join(deltas) == "Hello world!"
     assert payloads[0]["stream"] is True
+
+
+def test_ollama_llm_stream_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch)
+
+    def fake_stream(method: str, url: str, *, json: dict[str, Any], timeout: Any) -> None:
+        raise httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(httpx, "stream", fake_stream)
+
+    llm = OllamaLLM()
+    stream = llm.generate("prompt text", stream=True)
+    assert not isinstance(stream, str)
+    with pytest.raises(LLMTimeoutError):
+        next(stream)
+
+
+def test_ollama_llm_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch)
+
+    def fake_post(url: str, *, json: dict[str, Any], timeout: Any) -> None:
+        raise httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    llm = OllamaLLM()
+    with pytest.raises(LLMTimeoutError):
+        llm.generate("prompt text", stream=False)
+
+
+def test_ollama_llm_service_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch)
+
+    def fake_post(url: str, *, json: dict[str, Any], timeout: Any) -> None:
+        raise httpx.HTTPError("boom")
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    llm = OllamaLLM()
+    with pytest.raises(LLMServiceError):
+        llm.generate("prompt text", stream=False)
