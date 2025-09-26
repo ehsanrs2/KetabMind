@@ -8,8 +8,11 @@ import numpy as np
 from numpy.typing import NDArray
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
+import structlog
 
 FloatArray: TypeAlias = NDArray[np.floating[Any]]
+
+log = structlog.get_logger(__name__)
 
 
 @runtime_checkable
@@ -41,13 +44,24 @@ class VectorStore:
         self.vector_size = vector_size
 
     def ensure_collection(self) -> None:
-        existing = [c.name for c in self.client.get_collections().collections]
-        if self.collection in existing:
+        current = self._current_vector_size()
+        if current is None:
+            self.client.recreate_collection(
+                collection_name=self.collection,
+                vectors_config=rest.VectorParams(size=self.vector_size, distance=rest.Distance.COSINE),
+            )
             return
-        self.client.create_collection(
-            collection_name=self.collection,
-            vectors_config=rest.VectorParams(size=self.vector_size, distance=rest.Distance.COSINE),
-        )
+        if current != self.vector_size:
+            log.warning(
+                "recreating_qdrant_collection_due_to_dim_mismatch",
+                collection=self.collection,
+                previous_dim=current,
+                requested_dim=self.vector_size,
+            )
+            self.client.recreate_collection(
+                collection_name=self.collection,
+                vectors_config=rest.VectorParams(size=self.vector_size, distance=rest.Distance.COSINE),
+            )
 
     def delete_collection(self) -> None:
         self.client.delete_collection(self.collection)
@@ -121,3 +135,19 @@ class VectorStore:
         if isinstance(item, _SupportsToList):
             return item.tolist()
         return item
+
+    def _current_vector_size(self) -> int | None:
+        try:
+            info = self.client.get_collection(self.collection)
+        except Exception:
+            return None
+        params = getattr(getattr(info, "config", None), "params", None)
+        if isinstance(params, rest.CollectionParams):
+            vectors = params.vectors
+            if isinstance(vectors, rest.VectorParams):
+                return int(vectors.size)
+            if isinstance(vectors, dict):
+                size = vectors.get("size")
+                if size is not None:
+                    return int(size)
+        return None

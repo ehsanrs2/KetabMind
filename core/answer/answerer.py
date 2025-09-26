@@ -7,6 +7,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from core import config
 from core.retrieve.retriever import Retriever, ScoredChunk
 
 from .llm import LLM, ensure_stop_sequences, get_llm, truncate_to_token_budget
@@ -35,7 +36,7 @@ class LLMConfig:
 
 
 def _get_env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
+    raw = _get_env(name)
     if raw is None:
         return default
     try:
@@ -45,7 +46,7 @@ def _get_env_int(name: str, default: int) -> int:
 
 
 def _get_env_float(name: str, default: float) -> float:
-    raw = os.getenv(name)
+    raw = _get_env(name)
     if raw is None:
         return default
     try:
@@ -59,12 +60,13 @@ def _resolve_tokenizer_name(model: str) -> str:
 
 
 def _load_config() -> LLMConfig:
-    backend = os.getenv("LLM_BACKEND", "mock").lower()
-    model = os.getenv("LLM_MODEL", "mock")
-    max_input_tokens = _get_env_int("LLM_MAX_INPUT_TOKENS", 4096)
-    max_new_tokens = _get_env_int("LLM_MAX_NEW_TOKENS", 256)
-    temperature = _get_env_float("LLM_TEMPERATURE", 0.2)
-    top_p = _get_env_float("LLM_TOP_P", 0.95)
+    settings = config.settings
+    backend = (_get_env("LLM_BACKEND", settings.llm_backend) or settings.llm_backend).lower()
+    model = _get_env("LLM_MODEL", settings.llm_model) or settings.llm_model
+    max_input_tokens = _get_env_int("LLM_MAX_INPUT_TOKENS", settings.llm_max_input_tokens)
+    max_new_tokens = _get_env_int("LLM_MAX_NEW_TOKENS", settings.llm_max_new_tokens)
+    temperature = _get_env_float("LLM_TEMPERATURE", settings.llm_temperature)
+    top_p = _get_env_float("LLM_TOP_P", settings.llm_top_p)
     system_instructions = DEFAULT_SYSTEM_INSTRUCTIONS
     tokenizer_name = _resolve_tokenizer_name(model)
     return LLMConfig(
@@ -78,6 +80,13 @@ def _load_config() -> LLMConfig:
         system_instructions=system_instructions,
         stop_sequences=list(STOP_SEQUENCES),
     )
+
+
+def _get_env(key: str, default: str | None = None) -> str | None:
+    value = os.getenv(key)
+    if value is not None:
+        return value
+    return default
 
 
 def _prepare_prompt(question: str, contexts: list[ScoredChunk], config: LLMConfig) -> str:
@@ -94,6 +103,9 @@ def _consume_response(result: str | Iterator[str]) -> str:
 def answer(query: str, top_k: int = 8) -> dict[str, Any]:
     config = _load_config()
     contexts = _retriever.retrieve(query, top_k)
+    if not any(c.text.strip() for c in contexts):
+        follow_up = f"{query} explain further"
+        contexts = _retriever.retrieve(follow_up, top_k)
     prompt = _prepare_prompt(query, contexts, config)
     llm: LLM = get_llm()
     raw_answer = llm.generate(prompt, stream=False)
@@ -119,6 +131,9 @@ def stream_answer(query: str, top_k: int = 8) -> Iterable[dict[str, Any]]:
 
     config = _load_config()
     contexts = _retriever.retrieve(query, top_k)
+    if not any(c.text.strip() for c in contexts):
+        follow_up = f"{query} explain further"
+        contexts = _retriever.retrieve(follow_up, top_k)
     prompt = _prepare_prompt(query, contexts, config)
     llm: LLM = get_llm()
     stream_result = llm.generate(prompt, stream=True)

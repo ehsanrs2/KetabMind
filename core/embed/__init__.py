@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.config import settings
+from core import config
 
 from .base import Embedder
 from .mock import MockEmbedder
@@ -14,6 +14,7 @@ def get_embedder() -> Embedder:
     - small: BGE small (384)
     - base: BGE base (768)
     """
+    settings = config.settings
     name = (settings.embed_model or "mock").lower()
     if name == "mock":
         return MockEmbedder()

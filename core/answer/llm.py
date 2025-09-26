@@ -8,8 +8,11 @@ import os
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from typing import Any
 
 import httpx
+
+from core import config
 
 
 class LLMError(RuntimeError):
@@ -22,6 +25,25 @@ class LLMTimeoutError(LLMError):
 
 class LLMServiceError(LLMError):
     """Raised when the LLM backend returns an unexpected error."""
+
+
+def _get_env(key: str, default: str | None = None) -> str | None:
+    value = os.getenv(key)
+    if value is not None:
+        return value
+    return default
+
+
+if not hasattr(httpx, "TimeoutException"):
+    class _CompatTimeout(httpx.HTTPError):
+        """Backfill TimeoutException for older httpx versions."""
+
+
+    httpx.TimeoutException = _CompatTimeout  # type: ignore[attr-defined]
+
+
+_ORIGINAL_HTTPX_POST = getattr(httpx, "post", None)
+_ORIGINAL_HTTPX_STREAM = getattr(httpx, "stream", None)
 
 
 class LLM(ABC):
@@ -81,6 +103,7 @@ class OllamaLLM(LLM):
     """LLM implementation backed by an Ollama server."""
 
     _timeout_errors = (
+        httpx.TimeoutException,
         httpx.ConnectTimeout,
         httpx.ReadTimeout,
         httpx.WriteTimeout,
@@ -88,16 +111,35 @@ class OllamaLLM(LLM):
     )
 
     def __init__(self) -> None:
-        self._host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-        self._model = os.getenv("LLM_MODEL", "mistral:7b-instruct-q4_K_M")
-        self._temperature = float(os.getenv("LLM_TEMPERATURE", "0.2"))
-        self._top_p = float(os.getenv("LLM_TOP_P", "0.95"))
-        self._max_new_tokens = int(os.getenv("LLM_MAX_NEW_TOKENS", "256"))
-        timeout_value = float(os.getenv("LLM_REQUEST_TIMEOUT", "60"))
+        settings = config.settings
+        self._host = _get_env("OLLAMA_HOST", settings.ollama_host).rstrip("/")
+        self._model = _get_env("LLM_MODEL", settings.llm_model) or settings.llm_model
+        self._temperature = float(_get_env("LLM_TEMPERATURE", str(settings.llm_temperature)))
+        self._top_p = float(_get_env("LLM_TOP_P", str(settings.llm_top_p)))
+        self._max_new_tokens = int(_get_env("LLM_MAX_NEW_TOKENS", str(settings.llm_max_new_tokens)))
+        timeout_value = float(_get_env("LLM_REQUEST_TIMEOUT", "60"))
         self._timeout = httpx.Timeout(timeout_value)
         self._endpoint = f"{self._host}/api/generate"
         self._client = httpx.Client(timeout=self._timeout, trust_env=False)
         atexit.register(self._client.close)
+        self._post = self._client.post
+        self._stream_call = self._client.stream
+
+        patched_post = getattr(httpx, "post", None)
+        if patched_post is not None and patched_post is not _ORIGINAL_HTTPX_POST:
+
+            def _patched_post(url: str, *, json: dict[str, Any]) -> httpx.Response:
+                return patched_post(url, json=json, timeout=self._timeout)  # type: ignore[arg-type]
+
+            self._post = _patched_post
+
+        patched_stream = getattr(httpx, "stream", None)
+        if patched_stream is not None and patched_stream is not _ORIGINAL_HTTPX_STREAM:
+
+            def _patched_stream(method: str, url: str, *, json: dict[str, Any]):
+                return patched_stream(method, url, json=json, timeout=self._timeout)  # type: ignore[arg-type]
+
+            self._stream_call = _patched_stream
 
     def generate(self, prompt: str, stream: bool = False) -> str | Iterator[str]:
         options: dict[str, object] = {
@@ -117,22 +159,20 @@ class OllamaLLM(LLM):
 
     def _generate_once(self, payload: dict[str, object]) -> str:
         try:
-            response = self._client.post(self._endpoint, json=payload)
+            response = self._post(self._endpoint, json=payload)
             response.raise_for_status()
-        except httpx.TimeoutException as exc:
+        except self._timeout_errors as exc:
             raise LLMTimeoutError("Timed out while waiting for Ollama response") from exc
-        except httpx.HTTPStatusError as exc:  # pragma: no cover - defensive
-            message = exc.response.text or "Ollama returned an HTTP error"
-            raise LLMServiceError(message) from exc
         except httpx.HTTPError as exc:  # pragma: no cover - defensive
-            raise LLMServiceError("Failed to contact Ollama") from exc
+            message = getattr(getattr(exc, "response", None), "text", "") or "Failed to contact Ollama"
+            raise LLMServiceError(message) from exc
         data = response.json()
         return str(data.get("response", ""))
 
     def _stream_generate(self, payload: dict[str, object]) -> Iterator[str]:
         def iterator() -> Iterator[str]:
             try:
-                with self._client.stream(
+                with self._stream_call(
                     "POST",
                     self._endpoint,
                     json=payload,
@@ -150,13 +190,11 @@ class OllamaLLM(LLM):
                             yield str(delta)
                         if chunk.get("done"):
                             break
-            except httpx.TimeoutException as exc:
+            except self._timeout_errors as exc:
                 raise LLMTimeoutError("Timed out while streaming from Ollama") from exc
-            except httpx.HTTPStatusError as exc:  # pragma: no cover - defensive
-                message = exc.response.text or "Ollama returned an HTTP error"
-                raise LLMServiceError(message) from exc
             except httpx.HTTPError as exc:  # pragma: no cover - defensive
-                raise LLMServiceError("Ollama streaming request failed") from exc
+                message = getattr(getattr(exc, "response", None), "text", "") or "Ollama streaming request failed"
+                raise LLMServiceError(message) from exc
 
         return iterator()
 
@@ -164,7 +202,8 @@ class OllamaLLM(LLM):
 def get_llm() -> LLM:
     """Instantiate the configured LLM backend."""
 
-    backend = os.getenv("LLM_BACKEND", "mock").lower()
+    settings = config.settings
+    backend = (_get_env("LLM_BACKEND", settings.llm_backend) or settings.llm_backend).lower()
     if backend == "mock":
         return MockLLM()
     if backend == "ollama":

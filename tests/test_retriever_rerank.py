@@ -49,6 +49,9 @@ def test_retriever_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
             self.client: SearchClient = DummyClient()
             self.collection = "c"
 
+        def ensure_collection(self, dim: int) -> None:  # pragma: no cover - no-op for test
+            pass
+
     store: VectorStoreLike = DummyStore()
     r = Retriever(top_k=2)
     r.store = store

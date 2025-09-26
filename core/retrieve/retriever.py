@@ -41,6 +41,7 @@ class Retriever:
         embedder = get_embedder()
         qvec = embedder.embed([query])[0]
         store = self.store or VectorStore()
+        store.ensure_collection(len(qvec))
         hits = store.client.search(collection_name=store.collection, query_vector=qvec, limit=k)
 
         q_tokens = self._tokenize(query)
@@ -77,6 +78,7 @@ class SearchClient(Protocol):
 class VectorStoreLike(Protocol):
     client: SearchClient
     collection: str
+    def ensure_collection(self, dim: int) -> None: ...
 
 
 def cast_mapping(value: object) -> Mapping[str, Any]:

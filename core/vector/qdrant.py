@@ -5,10 +5,14 @@ from contextlib import suppress
 from pathlib import Path
 from typing import TypedDict, cast
 
+import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
 
 from ..config import settings
+
+
+log = structlog.get_logger(__name__)
 
 
 def make_qdrant_client() -> QdrantClient:
@@ -48,15 +52,43 @@ class VectorStore:
         self.client = make_qdrant_client()
         self.collection = settings.qdrant_collection
 
-    def _ensure_collection(self, dim: int) -> None:
-        """Create collection if missing."""
-        try:
-            self.client.get_collection(self.collection)
-        except Exception:
+    def ensure_collection(self, dim: int) -> None:
+        """Ensure the backing collection exists with the expected vector size."""
+        current = self._current_vector_size()
+        if current is None:
             self.client.recreate_collection(
                 collection_name=self.collection,
                 vectors_config=rest.VectorParams(size=dim, distance=rest.Distance.COSINE),
             )
+            return
+        if current != dim:
+            log.warning(
+                "recreating_qdrant_collection_due_to_dim_mismatch",
+                collection=self.collection,
+                previous_dim=current,
+                requested_dim=dim,
+            )
+            self.client.recreate_collection(
+                collection_name=self.collection,
+                vectors_config=rest.VectorParams(size=dim, distance=rest.Distance.COSINE),
+            )
+
+    def _current_vector_size(self) -> int | None:
+        try:
+            info = self.client.get_collection(self.collection)
+        except Exception:
+            return None
+
+        params = getattr(getattr(info, "config", None), "params", None)
+        if isinstance(params, rest.CollectionParams):
+            vectors = params.vectors
+            if isinstance(vectors, rest.VectorParams):
+                return int(vectors.size)
+            if isinstance(vectors, dict):
+                size = vectors.get("size")
+                if size is not None:
+                    return int(size)
+        return None
 
     def upsert(
         self, embeddings: Iterable[list[float]], payloads: Iterable[ChunkPayload]
@@ -67,7 +99,7 @@ class VectorStore:
         ensured = False
         for vec, payload in zip(embeddings, payloads, strict=False):
             if not ensured:
-                self._ensure_collection(len(vec))
+                self.ensure_collection(len(vec))
                 ensured = True
             existing, _ = self.client.scroll(
                 collection_name=self.collection,
@@ -96,6 +128,7 @@ class VectorStore:
         return len(points), skipped
 
     def query(self, embedding: list[float], top_k: int) -> list[ChunkPayload]:
+        self.ensure_collection(len(embedding))
         result = self.client.search(
             collection_name=self.collection, query_vector=embedding, limit=top_k
         )
