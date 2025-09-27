@@ -11,7 +11,11 @@ from core import config
 from core.retrieve.retriever import Retriever, ScoredChunk
 
 from .llm import LLM, ensure_stop_sequences, get_llm, truncate_to_token_budget
-from .template import build_prompt
+from .template import (
+    build_prompt,
+    estimate_token_count,
+    select_contexts_within_budget,
+)
 
 _retriever = Retriever()
 
@@ -106,13 +110,23 @@ def answer(query: str, top_k: int = 8) -> dict[str, Any]:
     if not any(c.text.strip() for c in contexts):
         follow_up = f"{query} explain further"
         contexts = _retriever.retrieve(follow_up, top_k)
-    prompt = _prepare_prompt(query, contexts, config)
+    selected_contexts = select_contexts_within_budget(
+        query,
+        contexts,
+        config.tokenizer_name,
+        config.max_input_tokens,
+    )
+    prompt = _prepare_prompt(query, selected_contexts, config)
     llm: LLM = get_llm()
     raw_answer = llm.generate(prompt, stream=False)
     answer_text = ensure_stop_sequences(_consume_response(raw_answer), config.stop_sequences)
+    est_input_tokens = estimate_token_count(
+        [query, *(ctx.text for ctx in selected_contexts)],
+        config.tokenizer_name,
+    )
     return {
         "answer": answer_text,
-        "contexts": [asdict(c) for c in contexts],
+        "contexts": [asdict(c) for c in selected_contexts],
         "debug": {
             "prompt": prompt,
             "backend": config.backend,
@@ -122,6 +136,11 @@ def answer(query: str, top_k: int = 8) -> dict[str, Any]:
             "max_new_tokens": config.max_new_tokens,
             "temperature": config.temperature,
             "top_p": config.top_p,
+            "stats": {
+                "total_contexts": len(contexts),
+                "used_contexts": len(selected_contexts),
+                "est_input_tokens": est_input_tokens,
+            },
         },
     }
 
@@ -134,18 +153,24 @@ def stream_answer(query: str, top_k: int = 8) -> Iterable[dict[str, Any]]:
     if not any(c.text.strip() for c in contexts):
         follow_up = f"{query} explain further"
         contexts = _retriever.retrieve(follow_up, top_k)
-    prompt = _prepare_prompt(query, contexts, config)
+    selected_contexts = select_contexts_within_budget(
+        query,
+        contexts,
+        config.tokenizer_name,
+        config.max_input_tokens,
+    )
+    prompt = _prepare_prompt(query, selected_contexts, config)
     llm: LLM = get_llm()
     stream_result = llm.generate(prompt, stream=True)
     if isinstance(stream_result, str):
         buffered = ensure_stop_sequences(stream_result, config.stop_sequences)
         if buffered:
             yield {"delta": buffered}
-        yield {"answer": buffered, "contexts": [asdict(c) for c in contexts]}
+        yield {"answer": buffered, "contexts": [asdict(c) for c in selected_contexts]}
         return
     collected: list[str] = []
     for delta in stream_result:
         collected.append(delta)
         yield {"delta": delta}
     final_answer = ensure_stop_sequences("".join(collected), config.stop_sequences)
-    yield {"answer": final_answer, "contexts": [asdict(c) for c in contexts]}
+    yield {"answer": final_answer, "contexts": [asdict(c) for c in selected_contexts]}
