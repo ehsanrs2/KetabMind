@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 import structlog
+from structlog.contextvars import merge_contextvars
 
 
 def configure_logging() -> None:
@@ -13,6 +14,7 @@ def configure_logging() -> None:
             structlog.processors.add_log_level,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            merge_contextvars,
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
