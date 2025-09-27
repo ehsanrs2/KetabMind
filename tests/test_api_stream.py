@@ -33,8 +33,16 @@ class DummyRetriever:
 
 
 class DummyLLM:
-    def generate(self, prompt: str) -> str:
-        return "foo bar baz"
+    def generate(self, prompt: str, stream: bool = False) -> str | Iterator[str]:
+        if not stream:
+            return "foo bar baz"
+
+        def iterator() -> Iterator[str]:
+            yield "foo "
+            yield "bar "
+            yield "baz"
+
+        return iterator()
 
 
 class TimeoutLLM:
@@ -89,5 +97,4 @@ def test_query_stream_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     client = TestClient(app)
     with client.stream("POST", "/query?stream=true", json={"q": "x", "top_k": 2}) as resp:
         frames = [json.loads(line) for line in resp.iter_lines() if line]
-    assert frames[-1]["error"]["type"] == "timeout"
-    assert frames[-1]["final"] is True
+    assert frames == [{"error": "timed out"}]
