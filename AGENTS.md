@@ -1,114 +1,125 @@
-# AGENTS.md — KetabMind
+# AGENTS.md
 
-## Project Goal
-KetabMind is a RAG-based system that indexes books (PDF/EPUB/text), retrieves relevant chunks, and answers questions with citations. The system must be testable, modular, and production-ready.
+## Overview
 
-## Global Standards
-- **Language & Runtime:** Python 3.11
-- **Package Manager:** poetry (or uv)
-- **Code Quality:** ruff + black, mypy (strict), pytest
-- **Logging:** structlog (JSON-friendly)
-- **Config:** pydantic-settings
-- **CLI:** Typer
-- **API:** FastAPI (REST + streaming)
-- **Vector DB:** Qdrant (docker-compose service)
-- **Embeddings:** pluggable (local first, mock allowed in tests)
-- **Comments:** English only, concise and actionable
-- **Outputs to user:** Prefer code diffs or full file dumps per file; minimal prose
+This document defines the responsibilities of each agent in the KetabMind system.
+Agents are modular components responsible for ingestion, normalization, embedding, retrieval, answer generation, UI handling, and evaluation.
+The design emphasizes multilingual (especially Persian/English) support, reproducibility, and modularity.
 
-## Repo Layout (expected)
-- apps/api/ (FastAPI app)
-- apps/ui/ (Next.js placeholder)
-- core/ingest/ (PDF/EPUB → text)
-- core/chunk/ (chunking)
-- core/embed/ (embedding adapters)
-- core/vector/ (Qdrant client)
-- core/retrieve/ (retriever)
-- core/answer/ (LLM orchestration with citations)
-- core/self_rag/ (answer verification)
-- core/eval/ (offline evaluation)
-- scripts/ (bootstrap, indexing, utilities)
-- configs/ (yaml / env-backed)
-- tests/ (pytest)
-- docs/ (architecture, requirements)
+---
 
-## Common Make Targets
-- `make setup` → install tooling & pre-commit
-- `make up` / `make down` → docker compose up/down (Qdrant, API, UI)
-- `make lint`, `make test`, `make run`, `make index-sample`, `make qa`
+## Agents
 
-## Agent Roles & Prompts
+### 1. Ingestion & OCR Agent
 
-### 1) Architect Agent
-**Responsibility:** Project skeleton, interfaces, contracts, CI, pre-commit.
-**Acceptance:**
-- pyproject.toml, .ruff.toml, .pre-commit-config.yaml, mypy.ini (if any)
-- docker-compose.yml (qdrant + api + ui)
-- Makefile with targets above
-**Prompt Style:**
-- Generate files with minimal placeholders and TODOs.
-- Include one end-to-end PoC path (`scripts/index_sample.py`).
+**Responsibility:** Convert input books into structured, normalized text with metadata.
 
-### 2) Ingestion Agent
-**Responsibility:** PDF/EPUB → normalized UTF-8 text with page metadata.
-**Acceptance:**
-- `core/ingest/pdf_to_text.py` with Typer CLI:
-  `python -m core.ingest.pdf_to_text --in IN.pdf --out OUT.jsonl`
-- Unit tests: `tests/test_ingest_pdf.py`
-**Constraints:**
-- Heuristic header/footer removal (configurable)
-- Return page_num, section if TOC available
+* **Digital PDFs:** Use PyMuPDF (or PDFMiner) to extract UTF-8 text. Apply configurable header/footer removal.
+* **Scanned PDFs:** Use Tesseract OCR with Farsi language (`OCR_FA=true`). Configure the Tesseract language data path.
+* **EPUB:** Parse the spine in correct order, strip HTML tags, and preserve chapter order.
+* **Output format:** JSONL with `{ book_id, version, page_num, section, text }`.
+* **Deduplication:** Hash the entire file to prevent re-indexing duplicates.
+* **Versioning:** Assign a unique ID/version for each upload to maintain history.
+* **Metadata:** Extract author, year, subject, and store in payload for filtering (e.g., “only math books”).
 
-### 3) Chunking Agent
-**Responsibility:** Sliding-window chunking with overlap.
-**Acceptance:**
-- `core/chunk/chunker.py` + tests
-- Output schema: `{text, book_id, page_start, page_end, chunk_id}`
+---
 
-### 4) Embedding & Vector Agent
-**Responsibility:** Embedding adapter + Qdrant client.
-**Acceptance:**
-- `core/embed/adapter.py` (interface + local default/mocks)
-- `core/vector/qdrant_client.py` (create_collection, upsert, query with filters)
-- Tests using dockerized Qdrant (ephemeral collection)
+### 2. Normalization Agent
 
-### 5) Retrieval & Answer Orchestrator Agent
-**Responsibility:** k-NN retrieval (+ simple rerank), prompt templating with citations.
-**Acceptance:**
-- `core/retrieve/retriever.py`, `core/answer/answerer.py`
-- JSON response: `{answer, citations:[{book, chapter, page, snippet, score}], debug}`
-- Tests with mocked LLM
+**Responsibility:** Apply Farsi-specific cleanup and text normalization before chunking/embedding.
 
-### 6) Self-RAG Agent
-**Responsibility:** Validate answers against contexts; detect hallucinations; requery if needed.
-**Acceptance:**
-- `core/self_rag/validator.py` + tests for detection heuristics
+* Unify Arabic vs. Persian variants of ی/ک.
+* Strip diacritics (harakat).
+* Normalize spaces (replace with standard space, fix non-breaking).
+* Apply ZWNJ where required.
+* Lowercasing: not used for Persian; rely on normalization and tokenization.
+* Lightweight regex + Unicode sufficient. Optionally use **Hazm** or **Parsivar** for tokenization/lemmatization.
 
-### 7) Eval Agent
-**Responsibility:** Offline evaluation.
-**Acceptance:**
-- `core/eval/offline_eval.py` with EM/F1 + citation coverage
-- CLI: `python -m core.eval.offline_eval --ds data/eval.jsonl`
+---
 
-### 8) API & UI Agent
-**Responsibility:** Minimal FastAPI with `/index` & `/query`; Next.js placeholder.
-**Acceptance:**
-- `apps/api/main.py` (streaming responses + health check)
-- `apps/ui/` simple chat page to call `/query`
+### 3. Embedding & Vector Agent
 
-## Response Format Requirement
-- Return code files (diff or full content). Avoid long explanations.
-- Each change must be buildable and testable: `make lint && make test`.
+**Responsibility:** Generate multilingual embeddings and manage vector store.
 
-## Definition of Done (DoD)
-- Lint + type-check pass
-- Tests added/updated and passing
-- Make targets runnable
-- If touching API, add a minimal integration test
-- Update docs if interfaces change
+* **Recommended models:** `bge-m3` or `intfloat/multilingual-e5-base`. Both work well for Persian.
+* **Configuration:**
 
-## Known Constraints
-- Some books may include poor OCR; keep ingestion extensible.
-- Large books: memory constraints → batch upserts to Qdrant.
-- GPU optional for embeddings; provide CPU fallback/mocks for CI.
+  * `EMBED_MODEL=multilingual`
+  * `EMBED_MODEL_NAME=bge-m3` (or e5-base-multilingual)
+* **Storage:** Ensure embeddings align with Qdrant schema.
+* **Model updates:** Clear old Qdrant collections when switching models.
+* **Optimization:** Quantization (4/8-bit) for RTX 3060; batching support for multiple queries.
+
+---
+
+### 4. Retrieval & Reranker Agent
+
+**Responsibility:** Retrieve relevant chunks and re-rank for precision.
+
+* Initial retrieval: cosine similarity over embeddings.
+* Reranking: Cross-encoder (e.g., `bge-reranker-v2-m3`).
+* Hybrid scoring: combine embedding cosine + lexical overlap (Farsi preprocessing) + reranker score.
+* Return top-N passages with metadata: `{ book_id, page, snippet, score }`.
+
+---
+
+### 5. Prompting & Answer Agent
+
+**Responsibility:** Synthesize answers with citations in the query’s language.
+
+* **Bilingual template:** Detect query language; respond in same language.
+* **Citation format:** `[bookID:page_start-page_end]`.
+* **Formatting:** Use bullet-points for clarity, include transparent citations.
+* **Fallback:** If evidence insufficient, return: *“Not enough information to answer accurately.”*
+* **Self-RAG:** If citation coverage is low, trigger a second retrieval+answer pass.
+
+---
+
+### 6. UI & RTL Agent
+
+**Responsibility:** User interface rendering with multilingual/RTL support.
+
+* **Pages:**
+
+  * Book upload page.
+  * Search/Chat page.
+* **Citations:** Clickable, jumping to book pages.
+* **RTL Support:** Persian font (e.g. Vazirmatn), `direction: rtl`, `unicode-bidi: plaintext`.
+* **Auth:** Multi-user auth (JWT/OAuth). Each user has private space for their own books and sessions.
+
+---
+
+### 7. Evaluation Agent
+
+**Responsibility:** Define and run evaluation metrics for system quality.
+
+* Build a small Persian Q&A dataset.
+* Compute **Exact Match (EM)**, **F1**, and **Citation Coverage** (percentage of answer sentences backed by retrieved contexts).
+* Tokenize Persian answers word-level for F1.
+* Run evaluations regularly and log results.
+
+---
+
+## System-Wide Considerations
+
+* **Logging & Monitoring:**
+
+  * Use `structlog` for structured logs.
+  * Export Prometheus metrics (latency, queries, token usage).
+  * Grafana dashboards for monitoring.
+* **Testing & CI/CD:**
+
+  * Unit, integration, and end-to-end tests.
+  * Run via GitHub Actions.
+* **Product Features:**
+
+  * History & Sessions.
+  * Bookmarks.
+  * Export answers to PDF/Word.
+  * Full-text search as pre-filter.
+* **Commercialization:**
+
+  * **SaaS version:** Centralized server with multi-user.
+  * **Desktop version:** Local GPU/offline support via Ollama/Transformers.
+  * **Pricing:** Subscription-based (storage size, number of books, query volume).
 
