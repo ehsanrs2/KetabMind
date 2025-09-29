@@ -86,21 +86,34 @@ def health() -> dict[str, str]:
 @_post("/query")
 def query(req: QueryRequest, request: Request, stream: bool = Query(False)) -> Any:
     request_id = getattr(request.state, "request_id", None)
-    log.info("query.received", stream=stream, top_k=req.top_k)
+    log.info(
+        "query.received",
+        stream=stream,
+        top_k=req.top_k,
+        request_id=request_id,
+    )
     if stream:
         def gen() -> Iterable[str]:
             if request_id is not None:
                 clear_contextvars()
                 bind_contextvars(request_id=request_id)
-            log.info("query.stream.start", top_k=req.top_k)
+            log.info("query.stream.start", top_k=req.top_k, request_id=request_id)
             try:
                 chunks = stream_answer(req.q, top_k=req.top_k)
             except LLMError as exc:
-                log.warning("query.stream.llm_error", error=str(exc))
+                log.warning(
+                    "query.stream.llm_error",
+                    error=str(exc),
+                    request_id=request_id,
+                )
                 yield json.dumps({"error": str(exc)}) + "\n"
                 return
             except Exception as exc:  # pragma: no cover - defensive
-                log.exception("query.stream.failure", error=str(exc))
+                log.exception(
+                    "query.stream.failure",
+                    error=str(exc),
+                    request_id=request_id,
+                )
                 yield json.dumps({"error": str(exc)}) + "\n"
                 return
 
@@ -108,23 +121,36 @@ def query(req: QueryRequest, request: Request, stream: bool = Query(False)) -> A
                 for chunk in chunks:
                     yield json.dumps(chunk) + "\n"
             except LLMError as exc:
-                log.warning("query.stream.llm_error", error=str(exc))
+                log.warning(
+                    "query.stream.llm_error",
+                    error=str(exc),
+                    request_id=request_id,
+                )
                 yield json.dumps({"error": str(exc)}) + "\n"
             except Exception as exc:  # pragma: no cover - defensive
-                log.exception("query.stream.failure", error=str(exc))
+                log.exception(
+                    "query.stream.failure",
+                    error=str(exc),
+                    request_id=request_id,
+                )
                 yield json.dumps({"error": str(exc)}) + "\n"
             else:
-                log.info("query.stream.complete")
+                log.info("query.stream.complete", request_id=request_id)
             finally:
                 clear_contextvars()
 
         return StreamingResponse(gen(), media_type="application/json")
     try:
         result = answer(req.q, top_k=req.top_k)
-        log.info("query.complete", stream=False, top_k=req.top_k)
+        log.info(
+            "query.complete",
+            stream=False,
+            top_k=req.top_k,
+            request_id=request_id,
+        )
         return result
     except LLMError as exc:
-        log.warning("query.llm_error", error=str(exc))
+        log.warning("query.llm_error", error=str(exc), request_id=request_id)
         return _llm_error_response(exc)
 
 
@@ -158,11 +184,20 @@ async def add_request_id(
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     bind_contextvars(request_id=request_id)
     request.state.request_id = request_id
-    log.info("request.start", method=request.method, path=request.url.path)
+    log.info(
+        "request.start",
+        method=request.method,
+        path=request.url.path,
+        request_id=request_id,
+    )
     try:
         response = await call_next(request)
         response.headers["x-request-id"] = request_id
-        log.info("request.finish", status_code=response.status_code)
+        log.info(
+            "request.finish",
+            status_code=response.status_code,
+            request_id=request_id,
+        )
         return response
     except Exception as exc:  # pragma: no cover - defensive
         log.exception(
@@ -170,6 +205,7 @@ async def add_request_id(
             error=str(exc),
             method=request.method,
             path=request.url.path,
+            request_id=request_id,
         )
         raise
     finally:
