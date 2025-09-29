@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import structlog
@@ -15,7 +15,8 @@ from qdrant_client.http import models as rest
 from core.chunk.chunker import sliding_window_chunks
 from core.config import settings
 from core.embed import get_embedder
-from core.ingest.pdf_to_text import pdf_to_pages
+from core.ingest.pdf_to_text import Page, pdf_to_pages
+from ingest.pipeline import pages_to_records, write_records
 from core.vector.qdrant_client import VectorStore
 from utils.hash import sha256_file
 
@@ -88,11 +89,26 @@ def _read_text_file(path: Path) -> list[tuple[str, int]]:
     return [(text, 1)]
 
 
+def _clean_metadata(meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not meta:
+        return {}
+    return {
+        str(key): value
+        for key, value in meta.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _jsonl_path(book_id: str) -> Path:
+    return _manifest_dir() / f"{book_id}.jsonl"
+
+
 def index_path(
     in_path: Path,
     collection: str | None = None,
     *,
     file_hash: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
 ) -> IndexResult:
     """Index a file path into Qdrant.
 
@@ -134,14 +150,25 @@ def index_path(
 
     book_id = str(uuid.uuid4())
     version = _new_version()
+    meta_payload = _clean_metadata(metadata)
 
     if in_path.suffix.lower() == ".pdf":
         pages = pdf_to_pages(in_path)
         texts_pages = [(p.text, p.page_num) for p in pages]
     elif in_path.suffix.lower() in {".txt", ".md"}:
         texts_pages = _read_text_file(in_path)
+        pages = [Page(page_num=page, text=text) for text, page in texts_pages]
     else:
         raise SystemExit("Unsupported file type; use .pdf or .txt")
+
+    records = pages_to_records(
+        pages,
+        book_id=book_id,
+        version=version,
+        file_hash=file_hash,
+        metadata=meta_payload,
+    )
+    write_records(records, _jsonl_path(book_id))
 
     embedder = get_embedder()
     vector_size = getattr(embedder, "dim", len(embedder.embed(["test"])[0]))
@@ -171,6 +198,7 @@ def index_path(
                 "file_hash": file_hash,
                 "version": version,
                 "indexed_chunks": indexed_chunks,
+                "meta": dict(meta_payload),
             }
         )
 
@@ -191,13 +219,17 @@ def index_path(
         vecs = np.asarray(embedder.embed(texts), dtype=np.float32)
         store.upsert(ids=ids, vectors=vecs, payloads=payloads)
 
-    manifest[manifest_key] = {
+    manifest_entry = {
         "book_id": book_id,
         "path": str(in_path),
         "file_hash": file_hash,
         "indexed_chunks": len(ids),
         "version": version,
     }
+    if meta_payload:
+        manifest_entry["meta"] = meta_payload
+    manifest_entry["jsonl_path"] = str(_jsonl_path(book_id))
+    manifest[manifest_key] = manifest_entry
     _save_manifest(manifest)
 
     log.info(

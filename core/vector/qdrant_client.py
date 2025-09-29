@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Mapping, Protocol, TypeAlias, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -91,7 +91,15 @@ class VectorStore:
         if len(vector_list) != len(id_list):  # pragma: no cover - defensive
             msg = "vectors length must match ids length"
             raise ValueError(msg)
-        payload_list = [dict(p) for p in payloads]
+        payload_list: list[dict[str, Any]] = []
+        for payload in payloads:
+            payload_dict = dict(payload)
+            meta = payload_dict.get("meta")
+            if isinstance(meta, Mapping):
+                payload_dict["meta"] = dict(meta)
+            else:
+                payload_dict["meta"] = {}
+            payload_list.append(payload_dict)
         if len(payload_list) != len(id_list):  # pragma: no cover - defensive
             msg = "payloads length must match ids length"
             raise ValueError(msg)

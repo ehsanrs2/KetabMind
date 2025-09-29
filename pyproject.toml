@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "KetabMind: RAG system for books"
 authors = ["KetabMind Team <devnull@example.com>"]
 readme = "README.md"
-packages = [{ include = "apps" }, { include = "core" }, { include = "scripts" }]
+packages = [
+    { include = "apps" },
+    { include = "core" },
+    { include = "ingest" },
+    { include = "scripts" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
