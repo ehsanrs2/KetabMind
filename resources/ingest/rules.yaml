@@ -1,0 +1,20 @@
+# Default rules for removing recurring headers and footers during ingestion.
+defaults:
+  strip_surrounding_whitespace: true
+  max_matches: 3
+
+header:
+  zones:
+    top: 3
+  regex:
+    - pattern: "^(?:ketabmind|sample header|chapter \\d+)"
+      flags: ["IGNORECASE"]
+
+footer:
+  zones:
+    bottom: 3
+  regex:
+    - pattern: "^page\\s+\\d+"
+      flags: ["IGNORECASE"]
+    - pattern: "^(?:confidential|powered by ketabmind)"
+      flags: ["IGNORECASE"]
