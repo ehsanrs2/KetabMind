@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import json
-import uuid
-import hashlib
 import tempfile
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import structlog
+from qdrant_client.http import models as rest
 
 from core.chunk.chunker import sliding_window_chunks
 from core.config import settings
 from core.embed import get_embedder
 from core.ingest.pdf_to_text import pdf_to_pages
 from core.vector.qdrant_client import VectorStore
+from utils.hash import sha256_file
 
 log = structlog.get_logger()
 
@@ -52,16 +55,32 @@ def _save_manifest(data: dict[str, Any]) -> None:
         json.dump(data, fh, ensure_ascii=False, indent=2)
 
 
-def _hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(8192), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _manifest_key(collection: str, file_hash: str) -> str:
+    return f"{collection}:{file_hash}"
 
 
-def _book_id_from_path(path: Path) -> str:
-    return path.stem
+def _new_version() -> str:
+    now = datetime.now(timezone.utc)
+    return now.strftime("v%Y%m%d%H%M%S%f")
+
+
+@dataclass
+class IndexedFile:
+    book_id: str
+    version: str
+    file_hash: str
+    indexed_chunks: int
+
+
+@dataclass
+class IndexResult:
+    new: int
+    skipped: int
+    collection: str
+    book_id: str
+    version: str
+    file_hash: str
+    indexed_chunks: int
 
 
 def _read_text_file(path: Path) -> list[tuple[str, int]]:
@@ -69,7 +88,12 @@ def _read_text_file(path: Path) -> list[tuple[str, int]]:
     return [(text, 1)]
 
 
-def index_path(in_path: Path, collection: str | None = None) -> tuple[int, int, str]:
+def index_path(
+    in_path: Path,
+    collection: str | None = None,
+    *,
+    file_hash: str | None = None,
+) -> IndexResult:
     """Index a file path into Qdrant.
 
     Returns counts of new and skipped chunks and the collection used.
@@ -77,23 +101,39 @@ def index_path(in_path: Path, collection: str | None = None) -> tuple[int, int, 
     if not in_path.exists():
         raise SystemExit(f"File not found: {in_path}")
 
-    book_id = _book_id_from_path(in_path)
     store_collection = collection or settings.qdrant_collection
 
-    file_hash = _hash_file(in_path)
+    file_hash = file_hash or sha256_file(in_path)
     manifest = _load_manifest()
-    manifest_key = f"{store_collection}:{file_hash}"
+    manifest_key = _manifest_key(store_collection, file_hash)
     cached = manifest.get(manifest_key)
     if cached:
-        skipped_count = int(cached.get("chunks") or cached.get("new") or 0) or 1
+        book_id = str(cached.get("book_id"))
+        version = str(cached.get("version"))
+        indexed_chunks = int(cached.get("indexed_chunks", 0)) or int(
+            cached.get("chunks", 0)
+        )
+        skipped_count = indexed_chunks or 1
         log.info(
             "indexed",
             book_id=book_id,
+            version=version,
             new=0,
             skipped=skipped_count,
             total=skipped_count,
         )
-        return 0, skipped_count, store_collection
+        return IndexResult(
+            new=0,
+            skipped=skipped_count,
+            collection=store_collection,
+            book_id=book_id,
+            version=version,
+            file_hash=file_hash,
+            indexed_chunks=skipped_count,
+        )
+
+    book_id = str(uuid.uuid4())
+    version = _new_version()
 
     if in_path.suffix.lower() == ".pdf":
         pages = pdf_to_pages(in_path)
@@ -115,6 +155,7 @@ def index_path(in_path: Path, collection: str | None = None) -> tuple[int, int, 
 
     ids: list[str] = []
     payloads: list[dict[str, Any]] = []
+    indexed_chunks = len(chunks)
     for ch in chunks:
         # Use deterministic UUIDv5 for Qdrant-compatible point IDs
         name = f"{book_id}||{ch.text}"
@@ -127,6 +168,9 @@ def index_path(in_path: Path, collection: str | None = None) -> tuple[int, int, 
                 "page_start": ch.page_start,
                 "page_end": ch.page_end,
                 "chunk_id": ch.chunk_id,
+                "file_hash": file_hash,
+                "version": version,
+                "indexed_chunks": indexed_chunks,
             }
         )
 
@@ -150,16 +194,80 @@ def index_path(in_path: Path, collection: str | None = None) -> tuple[int, int, 
     manifest[manifest_key] = {
         "book_id": book_id,
         "path": str(in_path),
-        "chunks": len(ids),
-        "new": new_count,
+        "file_hash": file_hash,
+        "indexed_chunks": len(ids),
+        "version": version,
     }
     _save_manifest(manifest)
 
     log.info(
         "indexed",
         book_id=book_id,
+        version=version,
         new=new_count,
         skipped=skipped_count,
         total=len(ids),
     )
-    return new_count, skipped_count, store_collection
+    return IndexResult(
+        new=new_count,
+        skipped=skipped_count,
+        collection=store_collection,
+        book_id=book_id,
+        version=version,
+        file_hash=file_hash,
+        indexed_chunks=len(ids),
+    )
+
+
+def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
+    """Return metadata for an indexed file if it already exists."""
+
+    manifest = _load_manifest()
+    cached = manifest.get(_manifest_key(collection, file_hash))
+    if cached:
+        return IndexedFile(
+            book_id=str(cached.get("book_id")),
+            version=str(cached.get("version")),
+            file_hash=file_hash,
+            indexed_chunks=int(cached.get("indexed_chunks", 0))
+            or int(cached.get("chunks", 0)),
+        )
+
+    with VectorStore(
+        mode=settings.qdrant_mode,
+        location=settings.qdrant_location,
+        url=settings.qdrant_url,
+        collection=collection,
+        vector_size=1,
+    ) as store:
+        try:
+            existing, _ = store.client.scroll(
+                collection_name=collection,
+                scroll_filter=rest.Filter(
+                    must=[
+                        rest.FieldCondition(
+                            key="file_hash",
+                            match=rest.MatchValue(value=file_hash),
+                        )
+                    ]
+                ),
+                limit=1,
+            )
+        except ValueError as exc:
+            if "not found" in str(exc).lower():
+                return None
+            raise
+
+    if not existing:
+        return None
+
+    payload = dict(existing[0].payload or {})
+    book_id = str(payload.get("book_id", ""))
+    version = str(payload.get("version", "")) or _new_version()
+    indexed_chunks = int(payload.get("indexed_chunks") or 0)
+    return IndexedFile(
+        book_id=book_id,
+        version=version,
+        file_hash=file_hash,
+        indexed_chunks=indexed_chunks,
+    )

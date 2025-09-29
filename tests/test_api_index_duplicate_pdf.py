@@ -45,6 +45,8 @@ def test_duplicate_pdf_upload_does_not_increase_vectors(
     assert first_response.status_code == 200
     first_data = first_response.json()
     assert first_data["new"] > 0
+    assert first_data["book_id"]
+    assert first_data["version"].startswith("v")
 
     qdrant_client = QdrantClient(path=str(qdrant_path))
     initial_count = _collection_count(qdrant_client, collection_name)
@@ -54,6 +56,8 @@ def test_duplicate_pdf_upload_does_not_increase_vectors(
     assert second_response.status_code == 200
     second_data = second_response.json()
     assert second_data["skipped"] > 0
+    assert second_data["book_id"] == first_data["book_id"]
+    assert second_data["version"] == first_data["version"]
 
     final_count = _collection_count(qdrant_client, collection_name)
     assert final_count == initial_count

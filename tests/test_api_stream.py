@@ -4,7 +4,6 @@ import json
 import sys
 import types
 from collections.abc import Iterator
-from types import ModuleType
 from typing import Any, cast
 
 import pytest
@@ -14,16 +13,30 @@ from core.answer import answerer
 from core.answer.llm import LLMTimeoutError
 
 
-def _noop_index_path(*args: object, **kwargs: object) -> None:
+def _noop_index_path(*args: object, **kwargs: object) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        new=0,
+        skipped=0,
+        collection="stub",
+        book_id="stub",
+        version="v0",
+        file_hash="sha256:stub",
+        indexed_chunks=0,
+    )
+
+
+def _noop_find_indexed_file(*args: object, **kwargs: object) -> None:
     return None
 
 
 def _ensure_core_index_stub() -> None:
     if "core.index" in sys.modules:
         return
-    fake_index_module: ModuleType = types.ModuleType("core.index")
+    fake_index_module = types.ModuleType("core.index")
     module_as_any = cast(Any, fake_index_module)
     module_as_any.index_path = _noop_index_path
+    module_as_any.IndexResult = types.SimpleNamespace
+    module_as_any.find_indexed_file = _noop_find_indexed_file
     sys.modules["core.index"] = fake_index_module
 
 

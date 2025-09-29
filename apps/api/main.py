@@ -16,8 +16,10 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
-from core.index import index_path
+from core.config import settings
+from core.index import IndexResult, find_indexed_file, index_path
 from core.logging import configure_logging
+from utils.hash import sha256_file
 
 if TYPE_CHECKING:
 
@@ -76,6 +78,18 @@ def _llm_error_response(exc: LLMError) -> JSONResponse:
 class IndexRequest(BaseModelProto):
     path: str
     collection: str | None = None
+
+
+def _serialize_index_result(result: IndexResult) -> dict[str, Any]:
+    return {
+        "new": result.new,
+        "skipped": result.skipped,
+        "collection": result.collection,
+        "book_id": result.book_id,
+        "version": result.version,
+        "file_hash": result.file_hash,
+        "indexed_chunks": result.indexed_chunks,
+    }
 
 
 @_get("/health")
@@ -157,10 +171,26 @@ def query(req: QueryRequest, request: Request, stream: bool = Query(False)) -> A
 @_post("/index")
 def index(req: IndexRequest) -> dict[str, Any]:
     try:
-        new, skipped, collection = index_path(Path(req.path), collection=req.collection)
+        path = Path(req.path)
+        if not path.exists():
+            raise SystemExit(f"File not found: {path}")
+        collection = req.collection or settings.qdrant_collection
+        file_hash = sha256_file(path)
+        existing = find_indexed_file(collection, file_hash)
+        if existing:
+            return {
+                "new": 0,
+                "skipped": existing.indexed_chunks,
+                "collection": collection,
+                "book_id": existing.book_id,
+                "version": existing.version,
+                "file_hash": existing.file_hash,
+                "indexed_chunks": existing.indexed_chunks,
+            }
+        result = index_path(path, collection=collection, file_hash=file_hash)
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"new": new, "skipped": skipped, "collection": collection}
+    return _serialize_index_result(result)
 
 
 @_post("/upload")
@@ -170,10 +200,27 @@ async def upload(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
     dest = tmp_dir / filename.name
     dest.write_bytes(await file.read())
     try:
-        new, skipped, collection = index_path(dest)
+        collection = settings.qdrant_collection
+        file_hash = sha256_file(dest)
+        existing = find_indexed_file(collection, file_hash)
+        if existing:
+            payload = {
+                "new": 0,
+                "skipped": existing.indexed_chunks,
+                "collection": collection,
+                "book_id": existing.book_id,
+                "version": existing.version,
+                "file_hash": existing.file_hash,
+                "indexed_chunks": existing.indexed_chunks,
+                "path": str(dest),
+            }
+            return payload
+        result = index_path(dest, collection=collection, file_hash=file_hash)
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"new": new, "skipped": skipped, "collection": collection, "path": str(dest)}
+    payload = _serialize_index_result(result)
+    payload["path"] = str(dest)
+    return payload
 
 
 @app.middleware("http")

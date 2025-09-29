@@ -28,8 +28,13 @@ def test_upload_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert r1.status_code == 200
     data1 = r1.json()
     assert data1["new"] > 0
+    assert data1["book_id"]
+    assert data1["file_hash"].startswith("sha256:")
+    assert data1["version"].startswith("v")
 
     r2 = client.post("/upload", files=files())
     assert r2.status_code == 200
     data2 = r2.json()
     assert data2["skipped"] > 0
+    assert data2["book_id"] == data1["book_id"]
+    assert data2["version"] == data1["version"]
