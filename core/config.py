@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+import os
+from typing import TYPE_CHECKING, Any
 
 from pydantic_settings import SettingsConfigDict
 
@@ -38,4 +41,52 @@ class Settings(BaseSettingsProto):
     ingest_footer_lines: int = 0
 
 
-settings = Settings()
+_CACHE_KEYS = tuple(name.upper() for name in Settings.model_fields)
+_cached_settings: Settings | None = None
+_cached_signature: tuple[tuple[str, str | None], ...] | None = None
+
+
+def _build_signature() -> tuple[tuple[str, str | None], ...]:
+    return tuple((key, os.getenv(key)) for key in _CACHE_KEYS)
+
+
+def _load_settings(force: bool = False) -> Settings:
+    global _cached_settings, _cached_signature
+    signature = _build_signature()
+    if force or _cached_settings is None or signature != _cached_signature:
+        _cached_settings = Settings()
+        _cached_signature = signature
+    return _cached_settings
+
+
+def get_settings(*, reload: bool = False) -> Settings:
+    """Return current settings, reloading when environment changes."""
+
+    return _load_settings(force=reload)
+
+
+def reload_settings() -> Settings:
+    """Force settings reload from environment."""
+
+    return _load_settings(force=True)
+
+
+class _SettingsProxy:
+    """Lightweight proxy exposing the current settings instance."""
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(get_settings(), item)
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        setattr(get_settings(), key, value)
+
+    def __repr__(self) -> str:  # pragma: no cover - trivial
+        return repr(get_settings())
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return get_settings().model_dump(*args, **kwargs)
+
+
+settings = _SettingsProxy()
+
+__all__ = ["Settings", "settings", "get_settings", "reload_settings"]

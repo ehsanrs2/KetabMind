@@ -3,29 +3,37 @@ from __future__ import annotations
 from core import config
 
 from .base import Embedder
+from .fallback import HashEmbedder
 from .mock import MockEmbedder
 
 
+def _ensure_settings() -> str:
+    return (config.get_settings().embed_model or "mock").lower()
+
+
+def _make_bge(dim: int) -> Embedder:
+    try:
+        from .bge import BgeEmbedder
+    except Exception:  # pragma: no cover - gracefully fall back when deps missing
+        return HashEmbedder(dim)
+    try:
+        return BgeEmbedder(embed_dim=dim)
+    except Exception:  # pragma: no cover - runtime model issues
+        return HashEmbedder(dim)
+
+
 def get_embedder() -> Embedder:
-    """Return an embedder based on settings.embed_model.
+    """Return an embedder based on configuration.
 
     Supported values:
     - mock: lightweight deterministic mock (small dim)
-    - small: BGE small (384)
-    - base: BGE base (768)
+    - small: BGE small (384) or fallback hash-based equivalent when deps unavailable
+    - base: BGE base (768) or fallback hash-based equivalent when deps unavailable
     """
-    settings = config.settings
-    name = (settings.embed_model or "mock").lower()
+
+    name = _ensure_settings()
     if name == "mock":
         return MockEmbedder()
-    # Lazy import to avoid heavy deps unless requested
-    try:
-        from .bge import BgeEmbedder
-    except Exception as exc:  # pragma: no cover - import guard
-        raise RuntimeError(
-            "BGE requires sentence-transformers. Install it or set EMBED_MODEL=mock."
-        ) from exc
     if name == "base":
-        return BgeEmbedder(embed_dim=768)
-    # default to small
-    return BgeEmbedder(embed_dim=384)
+        return _make_bge(768)
+    return _make_bge(384)

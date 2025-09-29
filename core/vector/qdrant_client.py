@@ -43,6 +43,17 @@ class VectorStore:
             self.client = QdrantClient(url=url)
         self.vector_size = vector_size
 
+    def __enter__(self) -> "VectorStore":  # pragma: no cover - simple context helper
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:  # pragma: no cover - simple context helper
+        self.close()
+
+    def close(self) -> None:
+        close = getattr(self.client, "close", None)
+        if callable(close):
+            close()
+
     def ensure_collection(self) -> None:
         current = self._current_vector_size()
         if current is None:
