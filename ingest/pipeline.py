@@ -6,6 +6,7 @@ from typing import Any, Iterable, Mapping
 
 from core.ingest.pdf_to_text import Page
 from ingest.clean_rules import apply_rules, load_rules
+from nlp.fa_normalize import normalize_fa
 
 MetadataInput = Mapping[str, Any] | None
 
@@ -43,13 +44,14 @@ def pages_to_records(
     for page in pages:
         raw_text = getattr(page, "text", "") or ""
         cleaned_text = apply_rules(raw_text, rules)
+        normalized_text = normalize_fa(cleaned_text)
         record = {
             "book_id": book_id,
             "version": version,
             "file_hash": file_hash,
             "page_num": int(getattr(page, "page_num", -1)),
             "section": getattr(page, "section", None),
-            "text": cleaned_text,
+            "text": normalized_text,
             "meta": dict(normalized_meta),
         }
         records.append(record)
