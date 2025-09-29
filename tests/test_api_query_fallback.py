@@ -11,7 +11,19 @@ from fastapi.testclient import TestClient
 from core.answer import answerer
 
 
-def _noop_index_path(*args: object, **kwargs: object) -> None:
+def _noop_index_path(*args: object, **kwargs: object) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        new=0,
+        skipped=0,
+        collection="stub",
+        book_id="stub",
+        version="v0",
+        file_hash="sha256:stub",
+        indexed_chunks=0,
+    )
+
+
+def _noop_find_indexed_file(*args: object, **kwargs: object) -> None:
     return None
 
 
@@ -20,6 +32,8 @@ def _ensure_core_index_stub() -> None:
         return
     fake_index_module = types.ModuleType("core.index")
     fake_index_module.index_path = _noop_index_path  # type: ignore[attr-defined]
+    fake_index_module.IndexResult = types.SimpleNamespace  # type: ignore[attr-defined]
+    fake_index_module.find_indexed_file = _noop_find_indexed_file  # type: ignore[attr-defined]
     sys.modules["core.index"] = fake_index_module
 
 

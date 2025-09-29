@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from .indexer import index_path
+from .indexer import IndexResult, IndexedFile, find_indexed_file, index_path
 
-__all__ = ["index_path"]
+__all__ = ["index_path", "IndexResult", "IndexedFile", "find_indexed_file"]
