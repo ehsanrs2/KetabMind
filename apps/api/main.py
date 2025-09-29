@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import structlog
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
+from apps.api.schemas import IndexRequest, Metadata
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
@@ -73,11 +74,6 @@ def _llm_error_payload(exc: LLMError) -> tuple[int, dict[str, Any]]:
 def _llm_error_response(exc: LLMError) -> JSONResponse:
     status_code, payload = _llm_error_payload(exc)
     return JSONResponse(status_code=status_code, content=payload)
-
-
-class IndexRequest(BaseModelProto):
-    path: str
-    collection: str | None = None
 
 
 def _serialize_index_result(result: IndexResult) -> dict[str, Any]:
@@ -187,14 +183,30 @@ def index(req: IndexRequest) -> dict[str, Any]:
                 "file_hash": existing.file_hash,
                 "indexed_chunks": existing.indexed_chunks,
             }
-        result = index_path(path, collection=collection, file_hash=file_hash)
+        result = index_path(
+            path,
+            collection=collection,
+            file_hash=file_hash,
+            metadata=req.metadata(),
+        )
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _serialize_index_result(result)
 
 
+def _upload_metadata(
+    author: str | None = Form(None),
+    year: str | None = Form(None),
+    subject: str | None = Form(None),
+) -> Metadata:
+    return Metadata(author=author, year=year, subject=subject)
+
+
 @_post("/upload")
-async def upload(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
+async def upload(
+    file: UploadFile = File(...),  # noqa: B008
+    meta: Metadata = Depends(_upload_metadata),
+) -> dict[str, Any]:
     tmp_dir = Path(tempfile.gettempdir())
     filename = Path(file.filename or "upload")
     dest = tmp_dir / filename.name
@@ -215,7 +227,12 @@ async def upload(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
                 "path": str(dest),
             }
             return payload
-        result = index_path(dest, collection=collection, file_hash=file_hash)
+        result = index_path(
+            dest,
+            collection=collection,
+            file_hash=file_hash,
+            metadata=meta.as_dict(),
+        )
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     payload = _serialize_index_result(result)
