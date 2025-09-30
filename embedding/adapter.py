@@ -1,17 +1,29 @@
 """Embedding adapter for supported multilingual models."""
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
 from collections.abc import Iterable
 from typing import List, Optional
 
-import torch
-from transformers import AutoModel, AutoTokenizer
+try:
+    import torch
+except ImportError:  # pragma: no cover - optional dependency in tests
+    torch = None  # type: ignore[assignment]
+
+try:
+    from transformers import AutoModel, AutoTokenizer
+except ImportError:  # pragma: no cover - optional dependency in tests
+    AutoModel = AutoTokenizer = None  # type: ignore[assignment]
 
 try:
     from sentence_transformers import SentenceTransformer  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
     SentenceTransformer = None  # type: ignore
+
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingAdapter:
@@ -24,6 +36,7 @@ class EmbeddingAdapter:
     SUPPORTED_MODELS = {
         "bge-m3",
         "intfloat/multilingual-e5-base",
+        "mock",
     }
 
     def __init__(
@@ -41,6 +54,8 @@ class EmbeddingAdapter:
                 f"Model '{self.model_name}' is not supported. Supported models: {sorted(self.SUPPORTED_MODELS)}"
             )
 
+        self.is_mock = self.model_name == "mock"
+
         if batch_size is not None:
             self.batch_size = batch_size
         elif env_batch:
@@ -51,10 +66,36 @@ class EmbeddingAdapter:
         else:
             self.batch_size = 16
 
+        if not self.is_mock and torch is None:
+            raise ImportError(
+                f"PyTorch is required for embedding model '{self.model_name}'."
+            )
+
+        if not self.is_mock and AutoModel is None:
+            raise ImportError(
+                f"transformers is required for embedding model '{self.model_name}'."
+            )
+
         if device is not None:
-            self.device = device
+            requested_device = device
         else:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            cuda_available = bool(torch and torch.cuda.is_available())
+            requested_device = "cuda" if cuda_available else "cpu"
+
+        cuda_available = bool(torch and torch.cuda.is_available())
+        if requested_device.startswith("cuda") and not cuda_available:
+            logger.warning("CUDA requested for embeddings but not available; falling back to CPU.")
+            self.device = "cpu"
+        else:
+            self.device = "cpu" if self.is_mock else requested_device
+
+        if self.is_mock:
+            # Mock embeddings are CPU-only and do not require further setup.
+            self.quantization_mode = None
+            self.model = None
+            self.tokenizer = None
+            self.uses_sentence_transformer = False
+            return
 
         self.uses_sentence_transformer = False
         self.model = None
@@ -155,6 +196,9 @@ class EmbeddingAdapter:
         if not texts:
             return []
 
+        if self.is_mock:
+            return [self._hash_embed(text) for text in texts]
+
         effective_batch_size = (
             self.batch_size if batch_size == 16 and self.batch_size != 16 else batch_size
         )
@@ -191,3 +235,14 @@ class EmbeddingAdapter:
             results.extend(normalized.cpu().tolist())
 
         return results
+
+    @staticmethod
+    def _hash_embed(text: str, dim: int = 64) -> List[float]:
+        """Deterministic hash-based embedding used for mock mode."""
+        vec = [0.0] * dim
+        for token in text.lower().split():
+            digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            idx = int(digest[:8], 16) % dim
+            vec[idx] += 1.0
+        norm = sum(v * v for v in vec) ** 0.5 or 1.0
+        return [v / norm for v in vec]
