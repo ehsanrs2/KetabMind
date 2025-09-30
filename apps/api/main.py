@@ -11,7 +11,7 @@ import structlog
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from utils.pydantic_compat import BaseModel
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from apps.api.routes.query import build_query_response

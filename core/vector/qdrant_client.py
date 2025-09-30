@@ -1,11 +1,28 @@
 from __future__ import annotations
 
 import uuid
+import importlib
+import importlib.util
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Protocol, TypeAlias, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
 
-import numpy as np
-from numpy.typing import NDArray
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
+else:
+    _numpy_spec = importlib.util.find_spec("numpy")
+    if _numpy_spec is not None:  # pragma: no cover - optional dependency
+        np = importlib.import_module("numpy")
+        NDArray = importlib.import_module("numpy.typing").NDArray  # type: ignore[attr-defined]
+    else:  # pragma: no cover - fallback when numpy missing
+        class _NumpyFallback:
+            floating = float
+
+        np = _NumpyFallback()
+
+        class NDArray(list):
+            pass
+
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
 import structlog
