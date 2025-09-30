@@ -63,6 +63,26 @@ curl -X POST "http://localhost:8000/index" \
 make ingest-pdf INPUT=book.pdf AUTHOR="A. Author" YEAR=2020 SUBJECT=math
 ```
 
+Phase 2 – Embeddings & Vector Index
+-----------------------------------
+
+### Supported models
+
+- `bge-m3`
+- `multilingual-e5-base`
+
+### Environment variables
+
+- `EMBED_MODEL_NAME`
+- `EMBED_QUANT`
+- `BATCH_SIZE`
+
+### Example embedding build
+
+```bash
+EMBED_MODEL_NAME=bge-m3 EMBED_QUANT=8bit BATCH_SIZE=16 make up
+```
+
 Embedding models
 
 - Set `EMBED_MODEL` to select the embedder:
