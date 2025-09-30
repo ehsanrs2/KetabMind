@@ -16,11 +16,13 @@ The design emphasizes multilingual (especially Persian/English) support, reprodu
 
 * **Digital PDFs:** Use PyMuPDF (or PDFMiner) to extract UTF-8 text. Apply configurable header/footer removal.
 * **Scanned PDFs:** Use Tesseract OCR with Farsi language (`OCR_FA=true`). Configure the Tesseract language data path.
+* **OCR fallback:** Attempt text extraction first; if text density < threshold or file is image-only, route through OCR with multilingual (fa+eng) configuration and log fallback usage.
 * **EPUB:** Parse the spine in correct order, strip HTML tags, and preserve chapter order.
 * **Output format:** JSONL with `{ book_id, version, page_num, section, text }`.
-* **Deduplication:** Hash the entire file to prevent re-indexing duplicates.
-* **Versioning:** Assign a unique ID/version for each upload to maintain history.
-* **Metadata:** Extract author, year, subject, and store in payload for filtering (e.g., “only math books”).
+* **Deduplication:** Hash the entire file (e.g., SHA256) before processing. Skip ingestion when hash already exists for the collection and record the duplicate event.
+* **Versioning:** Maintain monotonically increasing `version` per `book_id`. Store previous versions for auditability and allow rollback.
+* **Metadata:** Extract author, year, subject, language, and additional user-supplied fields. Persist metadata alongside each page payload to support filters and analytics.
+* **Metadata validation:** Normalize casing, coerce numeric fields, and reject ingestion when mandatory metadata (author, year, subject) is missing.
 
 ---
 
@@ -28,12 +30,14 @@ The design emphasizes multilingual (especially Persian/English) support, reprodu
 
 **Responsibility:** Apply Farsi-specific cleanup and text normalization before chunking/embedding.
 
-* Unify Arabic vs. Persian variants of ی/ک.
-* Strip diacritics (harakat).
-* Normalize spaces (replace with standard space, fix non-breaking).
-* Apply ZWNJ where required.
+* Unify Arabic vs. Persian variants of ی/ک using transliteration tables.
+* Strip diacritics (harakat) and tatweel characters before downstream processing.
+* Normalize spaces (replace with standard space, fix non-breaking, collapse multiple spaces).
+* Apply ZWNJ where required (e.g., for prefixes like «می‌», «نمی‌», compound nouns, and suffixes such as «ها»).
+* Standardize punctuation (convert Arabic punctuation to Persian equivalents, normalize quotes/dashes).
 * Lowercasing: not used for Persian; rely on normalization and tokenization.
-* Lightweight regex + Unicode sufficient. Optionally use **Hazm** or **Parsivar** for tokenization/lemmatization.
+* Regex strategy: centralize normalization rules as ordered regex substitutions applied to each page/section; document each rule with comments and unit tests.
+* Unicode helpers: use Python's `unicodedata` plus curated regex patterns; fallback to libraries like **Hazm** or **Parsivar** for tokenization/lemmatization where needed.
 
 ---
 
