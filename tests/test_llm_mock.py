@@ -10,11 +10,14 @@ from core.retrieve.retriever import ScoredChunk
 
 def test_llm_mock_uses_context(monkeypatch: pytest.MonkeyPatch) -> None:
     top_ctx = ScoredChunk(
-        text="Python is a programming language. It is widely used.",
+        id="c1",
         book_id="b1",
-        page_start=1,
-        page_end=1,
-        score=1.0,
+        page=1,
+        snippet="Python is a programming language. It is widely used.",
+        cosine=0.0,
+        lexical=0.0,
+        reranker=0.0,
+        hybrid=1.0,
     )
 
     def fake_retrieve(query: str, top_k: int) -> list[ScoredChunk]:

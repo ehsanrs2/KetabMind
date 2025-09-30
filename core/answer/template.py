@@ -100,7 +100,7 @@ def build_prompt(question: str, contexts: list[ScoredChunk], sys_instructions: s
         f"Contexts ({len(contexts)}):",
     ]
     for idx, ctx in enumerate(contexts, 1):
-        lines.append(f"{idx}. ({ctx.book_id}:{ctx.page_start}-{ctx.page_end}) {ctx.text}")
+        lines.append(f"{idx}. ({ctx.book_id}:{ctx.page}) {ctx.text}")
     lines.append("")
     lines.append("Answer:")
     return "\n".join(lines)

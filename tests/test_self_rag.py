@@ -5,7 +5,19 @@ from core.self_rag.validator import validate
 
 
 def _mk_ctx(texts: list[str]) -> list[ScoredChunk]:
-    return [ScoredChunk(text=t, book_id="b", page_start=1, page_end=1, score=0.0) for t in texts]
+    return [
+        ScoredChunk(
+            id=f"c{idx}",
+            book_id="b",
+            page=1,
+            snippet=text,
+            cosine=0.0,
+            lexical=0.0,
+            reranker=0.0,
+            hybrid=0.0,
+        )
+        for idx, text in enumerate(texts, 1)
+    ]
 
 
 def test_validator_flags_no_context_match() -> None:
