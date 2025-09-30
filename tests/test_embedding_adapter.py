@@ -82,3 +82,48 @@ def test_embed_texts_with_automodel(monkeypatch):
 
     assert len(embeddings) == 2
     assert len(embeddings[0]) == DummyAutoModel.hidden_size
+
+
+def test_quantized_model_uses_bitsandbytes(monkeypatch):
+    monkeypatch.setenv("EMBED_MODEL_NAME", "bge-m3")
+    monkeypatch.setenv("EMBED_QUANT", "8bit")
+    module = reload_adapter(monkeypatch)
+
+    monkeypatch.setattr(module, "SentenceTransformer", None)
+    monkeypatch.setitem(sys.modules, "bitsandbytes", SimpleNamespace(__version__="0.41"))
+
+    captured_kwargs = {}
+
+    class DummyAutoTokenizer:
+        @classmethod
+        def from_pretrained(cls, model_name):
+            return cls()
+
+    class DummyAutoModel(torch.nn.Module):
+        @classmethod
+        def from_pretrained(cls, model_name, **kwargs):
+            captured_kwargs.update(kwargs)
+            return cls()
+
+        def eval(self):
+            return self
+
+    monkeypatch.setattr(module, "AutoTokenizer", DummyAutoTokenizer)
+    monkeypatch.setattr(module, "AutoModel", DummyAutoModel)
+
+    adapter = module.EmbeddingAdapter(device="cuda")
+    assert adapter.quantization_mode == "8bit"
+    assert captured_kwargs.get("device_map") == "auto"
+
+    quant_config = captured_kwargs.get("quantization_config")
+    assert quant_config is not None
+    assert getattr(quant_config, "load_in_8bit", False)
+
+
+def test_invalid_quantization_value(monkeypatch):
+    monkeypatch.setenv("EMBED_MODEL_NAME", "bge-m3")
+    monkeypatch.setenv("EMBED_QUANT", "2bit")
+    module = reload_adapter(monkeypatch)
+
+    with pytest.raises(ValueError):
+        module.EmbeddingAdapter()
