@@ -30,6 +30,7 @@ class Settings(BaseSettingsProto):
     reranker_model_name: str = "bge-reranker-v2-m3"
     reranker_topk: int = 50
     reranker_batch: int = 16
+    reranker_cache_size: int = 10000
 
     hybrid_weights: str = "cosine=0.4,lexical=0.2,reranker=0.4"
     lexical_fa_preproc: bool = True

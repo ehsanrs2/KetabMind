@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping, MutableMapping, Protocol, Sequence, cast
 
+from caching import LRUCache
 from core.config import settings
 from core.embed import get_embedder
 from core.vector.qdrant import VectorStore
@@ -111,6 +115,14 @@ def _parse_weights(raw: str) -> dict[str, float]:
     return dict(weights)
 
 
+_structlog_spec = importlib.util.find_spec("structlog")
+if _structlog_spec is not None:  # pragma: no cover - optional dependency
+    structlog = importlib.import_module("structlog")
+    log = structlog.get_logger(__name__)
+else:  # pragma: no cover - fallback for environments without structlog
+    log = logging.getLogger(__name__)
+
+
 class Retriever:
     """Three-stage retriever combining vector, lexical, and reranker signals."""
 
@@ -125,6 +137,7 @@ class Retriever:
         store: VectorStoreLike | None = None,
         reranker: RerankerAdapter | None = None,
         reranker_enabled: bool | None = None,
+        reranker_cache_size: int | None = None,
     ) -> None:
         self.top_n = top_n or 10
         self.top_m = max(1, top_m)
@@ -137,6 +150,14 @@ class Retriever:
             self.reranker_enabled = bool(reranker or settings.reranker_enabled)
         else:
             self.reranker_enabled = reranker_enabled
+        if reranker_cache_size is None:
+            reranker_cache_size = max(0, int(settings.reranker_cache_size))
+        if reranker_cache_size > 0:
+            self._reranker_cache: LRUCache[tuple[str, str], float] | None = LRUCache(
+                reranker_cache_size
+            )
+        else:
+            self._reranker_cache = None
 
     def _ensure_store(self, dim: int) -> VectorStoreLike:
         if self.store is None:
@@ -234,10 +255,39 @@ class Retriever:
             rerank_candidates = sorted(
                 candidates, key=lambda c: c.lexical, reverse=True
             )[: min(self.reranker_topk, len(candidates))]
-            pairs = [(query, c.snippet) for c in rerank_candidates]
-            scores = reranker.score_pairs(pairs)
-            for cand, score in zip(rerank_candidates, scores):
-                cand.reranker = float(score)
+            cache = self._reranker_cache
+            query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()
+            pending_pairs: list[tuple[_Candidate, tuple[str, str], tuple[str, str]]] = []
+            for cand in rerank_candidates:
+                cache_key = (query_hash, cand.id)
+                if cache:
+                    cached = cache.get(cache_key, None)
+                    if cached is not None:
+                        cand.reranker = float(cached)
+                        continue
+                pending_pairs.append((cand, cache_key, (query, cand.snippet)))
+
+            if pending_pairs:
+                pairs = [pair for _, _, pair in pending_pairs]
+                try:
+                    scores = reranker.score_pairs(pairs)
+                except TimeoutError:
+                    log.warning(
+                        "reranker.timeout",
+                        pair_count=len(pairs),
+                        timeout=getattr(reranker, "timeout_s", None),
+                    )
+                else:
+                    if len(scores) != len(pending_pairs):
+                        log.warning(
+                            "reranker.score_mismatch",
+                            expected=len(pending_pairs),
+                            received=len(scores),
+                        )
+                    for (cand, cache_key, _), score in zip(pending_pairs, scores):
+                        cand.reranker = float(score)
+                        if cache:
+                            cache.put(cache_key, cand.reranker)
 
         for candidate in candidates:
             candidate.hybrid = self._hybrid_score(candidate)
