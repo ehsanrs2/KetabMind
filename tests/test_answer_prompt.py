@@ -6,8 +6,26 @@ from core.retrieve.retriever import ScoredChunk
 
 def _ctx() -> list[ScoredChunk]:
     return [
-        ScoredChunk(text="A", book_id="b1", page_start=1, page_end=2, score=0.0),
-        ScoredChunk(text="B", book_id="b2", page_start=3, page_end=4, score=0.0),
+        ScoredChunk(
+            id="c1",
+            book_id="b1",
+            page=1,
+            snippet="A",
+            cosine=0.0,
+            lexical=0.0,
+            reranker=0.0,
+            hybrid=0.0,
+        ),
+        ScoredChunk(
+            id="c2",
+            book_id="b2",
+            page=3,
+            snippet="B",
+            cosine=0.0,
+            lexical=0.0,
+            reranker=0.0,
+            hybrid=0.0,
+        ),
     ]
 
 
@@ -18,4 +36,4 @@ def test_prompt_has_question_count_and_citation_hint() -> None:
     assert q in prompt
     assert str(len(ctx)) in prompt
     assert "[book_id:page_start-page_end]" in prompt
-    assert "(b1:1-2)" in prompt
+    assert "(b1:1)" in prompt

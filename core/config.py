@@ -26,6 +26,14 @@ class Settings(BaseSettingsProto):
 
     embed_model: str = "mock"  # mock|small|base
 
+    reranker_enabled: bool = False
+    reranker_model_name: str = "bge-reranker-v2-m3"
+    reranker_topk: int = 50
+    reranker_batch: int = 16
+
+    hybrid_weights: str = "cosine=0.4,lexical=0.2,reranker=0.4"
+    lexical_fa_preproc: bool = True
+
     llm_backend: str = "mock"
     llm_model: str = "mock"
     llm_max_input_tokens: int = 4096

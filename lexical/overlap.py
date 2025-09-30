@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from typing import Set
 
+from core.config import settings
 from nlp.fa_normalize import normalize_fa
 
 __all__ = ["overlap_score"]
@@ -65,7 +66,7 @@ def _contains_farsi(text: str) -> bool:
 
 
 def _maybe_normalize(text: str) -> str:
-    if _contains_farsi(text):
+    if settings.lexical_fa_preproc and _contains_farsi(text):
         return normalize_fa(text)
     return text
 

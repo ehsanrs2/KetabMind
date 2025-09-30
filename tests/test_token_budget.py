@@ -12,25 +12,34 @@ def test_answer_trims_contexts_within_budget(
 ) -> None:
     contexts = [
         ScoredChunk(
-            text="A" * 300,
+            id="c1",
             book_id="b1",
-            page_start=1,
-            page_end=1,
-            score=1.0,
+            page=1,
+            snippet="A" * 300,
+            cosine=0.0,
+            lexical=0.0,
+            reranker=0.0,
+            hybrid=1.0,
         ),
         ScoredChunk(
-            text="B" * 300,
+            id="c2",
             book_id="b2",
-            page_start=2,
-            page_end=2,
-            score=0.9,
+            page=2,
+            snippet="B" * 300,
+            cosine=0.0,
+            lexical=0.0,
+            reranker=0.0,
+            hybrid=0.9,
         ),
         ScoredChunk(
-            text="C" * 300,
+            id="c3",
             book_id="b3",
-            page_start=3,
-            page_end=3,
-            score=0.8,
+            page=3,
+            snippet="C" * 300,
+            cosine=0.0,
+            lexical=0.0,
+            reranker=0.0,
+            hybrid=0.8,
         ),
     ]
 
@@ -52,6 +61,6 @@ def test_answer_trims_contexts_within_budget(
     assert used_contexts > 0
     assert used_contexts < len(contexts)
 
-    expected_tokens = len(question) + len(result["contexts"][0]["text"])
+    expected_tokens = len(question) + len(result["contexts"][0]["snippet"])
     assert debug_stats["est_input_tokens"] == expected_tokens
     assert debug_stats["est_input_tokens"] <= int(max_input_tokens * 0.75)
