@@ -63,9 +63,15 @@ The design emphasizes multilingual (especially Persian/English) support, reprodu
 **Responsibility:** Retrieve relevant chunks and re-rank for precision.
 
 * Initial retrieval: cosine similarity over embeddings.
-* Reranking: Cross-encoder (e.g., `bge-reranker-v2-m3`).
-* Hybrid scoring: combine embedding cosine + lexical overlap (Farsi preprocessing) + reranker score.
+* Reranking: Cross-encoder (default `bge-reranker-v2-m3`, override via `RERANKER_MODEL_NAME`).
+* Hybrid scoring: combine embedding cosine + lexical overlap (Farsi preprocessing) + reranker score. Configure weights with `HYBRID_WEIGHTS="cosine=0.3,lexical=0.2,reranker=0.5"` (values must sum to ≤1 after normalization).
+* Environment toggles:
+  * `RERANKER_ENABLED=true|false` to switch the reranker stage on/off per deployment.
+  * `RERANKER_MODEL_NAME` to pin the cross-encoder checkpoint.
+  * `HYBRID_WEIGHTS` to tune weighting across cosine, lexical, and reranker scores.
+  * `QUERY_DEBUG=true` or HTTP `?debug=true` to surface hybrid score breakdowns for diagnostics.
 * Return top-N passages with metadata: `{ book_id, page, snippet, score }`.
+* Troubleshooting guidance: lower `HYBRID_WEIGHTS` for the reranker or disable it when GPU OOM occurs; shrink `top_k` or raise service timeouts for query timeouts.
 
 ---
 
