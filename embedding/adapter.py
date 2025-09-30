@@ -60,10 +60,26 @@ class EmbeddingAdapter:
         self.model = None
         self.tokenizer = None
 
+        quant_env = (os.getenv("EMBED_QUANT") or "").strip().lower()
+        if quant_env in {"8", "8bit"}:
+            self.quantization_mode: Optional[str] = "8bit"
+        elif quant_env in {"4", "4bit"}:
+            self.quantization_mode = "4bit"
+        elif quant_env:
+            raise ValueError(
+                "EMBED_QUANT must be empty, '8bit', or '4bit'"
+            )
+        else:
+            self.quantization_mode = None
+
         self._load_model()
 
     def _load_model(self) -> None:
         """Load the embedding model using the appropriate backend."""
+        if self.quantization_mode:
+            self._load_quantized_model()
+            return
+
         if SentenceTransformer is not None:
             try:
                 self.model = SentenceTransformer(self.model_name, device=self.device)
@@ -74,8 +90,53 @@ class EmbeddingAdapter:
                 self.uses_sentence_transformer = False
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModel.from_pretrained(self.model_name)
+        model_kwargs = {}
+        if "cuda" in self.device:
+            model_kwargs["torch_dtype"] = torch.float16
+        else:
+            model_kwargs["torch_dtype"] = torch.float32
+
+        try:
+            self.model = AutoModel.from_pretrained(self.model_name, **model_kwargs)
+        except (ValueError, RuntimeError):  # pragma: no cover - fallback for unsupported fp16
+            if model_kwargs.get("torch_dtype") == torch.float16:
+                model_kwargs["torch_dtype"] = torch.float32
+                self.model = AutoModel.from_pretrained(self.model_name, **model_kwargs)
+            else:
+                raise
+
         self.model.to(self.device)
+        self.model.eval()
+
+    def _load_quantized_model(self) -> None:
+        """Load a quantized model using bitsandbytes when requested."""
+        assert self.quantization_mode is not None
+
+        try:
+            import bitsandbytes  # type: ignore  # noqa: F401
+        except ImportError as exc:  # pragma: no cover - requires optional dependency
+            raise ImportError(
+                "bitsandbytes is required when EMBED_QUANT is set."
+            ) from exc
+
+        from transformers import BitsAndBytesConfig
+
+        if self.quantization_mode == "8bit":
+            quant_config = BitsAndBytesConfig(load_in_8bit=True)
+        else:
+            quant_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+            )
+
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.model = AutoModel.from_pretrained(
+            self.model_name,
+            quantization_config=quant_config,
+            device_map="auto",
+        )
         self.model.eval()
 
     @staticmethod
