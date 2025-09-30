@@ -97,4 +97,20 @@ LLM backend
 Querying
 
 - POST `/query` with `{ "q": "your question", "top_k": 5 }`.
-- Response contains `answer` and `contexts` (retrieved chunks).
+- Response contains `answer` and `citations`. Include `?debug=true` to also receive chunk scores.
+
+Running tests
+-------------
+
+All test dependencies are declared in `pyproject.toml`. To run the suite locally:
+
+```bash
+poetry install
+pytest tests/test_api_query_fallback.py tests/e2e/test_index_query_phase1.py tests/e2e/test_query_debug.py
+```
+
+When running outside Poetry, ensure FastAPI and its multipart dependencies are installed:
+
+```bash
+pip install fastapi python-multipart pydantic-settings structlog qdrant-client
+```
