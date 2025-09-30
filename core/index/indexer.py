@@ -192,6 +192,7 @@ def index_path(
             {
                 "text": ch.text,
                 "book_id": ch.book_id,
+                "page_num": ch.page_start,
                 "page_start": ch.page_start,
                 "page_end": ch.page_end,
                 "chunk_id": ch.chunk_id,

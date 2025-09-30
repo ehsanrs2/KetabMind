@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 from core.embed import get_embedder
@@ -17,6 +17,11 @@ class ScoredChunk:
     page_end: int
     score: float
     distance: float = 0.0
+    version: str = ""
+    page_num: int = -1
+    file_hash: str = ""
+    chunk_id: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class Retriever:
@@ -54,6 +59,15 @@ class Retriever:
             d = 1 - sim
             overlap = self._overlap_score(q_tokens, self._tokenize(text))
             final = 0.7 * sim + 0.3 * overlap
+            version = payload.get("version")
+            page_num = payload.get("page_num")
+            file_hash = payload.get("file_hash")
+            chunk_id = payload.get("chunk_id")
+            meta = payload.get("meta")
+            if isinstance(meta, Mapping):
+                meta_dict = dict(meta)
+            else:
+                meta_dict = {}
             results.append(
                 ScoredChunk(
                     text=text,
@@ -62,6 +76,11 @@ class Retriever:
                     page_end=int(payload.get("page_end", -1)),
                     score=final,
                     distance=d,
+                    version=str(version) if version is not None else "",
+                    page_num=int(page_num) if page_num is not None else int(payload.get("page_start", -1)),
+                    file_hash=str(file_hash) if file_hash is not None else "",
+                    chunk_id=str(chunk_id) if chunk_id is not None else "",
+                    metadata=meta_dict,
                 )
             )
 
