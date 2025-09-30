@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
+from apps.api.routes.query import build_query_response
 from apps.api.schemas import IndexRequest, Metadata
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
@@ -94,12 +95,18 @@ def health() -> dict[str, str]:
 
 
 @_post("/query")
-def query(req: QueryRequest, request: Request, stream: bool = Query(False)) -> Any:
+def query(
+    req: QueryRequest,
+    request: Request,
+    stream: bool = Query(False),
+    debug: bool = Query(False),
+) -> Any:
     request_id = getattr(request.state, "request_id", None)
     log.info(
         "query.received",
         stream=stream,
         top_k=req.top_k,
+        debug=debug,
         request_id=request_id,
     )
     if stream:
@@ -107,7 +114,12 @@ def query(req: QueryRequest, request: Request, stream: bool = Query(False)) -> A
             if request_id is not None:
                 clear_contextvars()
                 bind_contextvars(request_id=request_id)
-            log.info("query.stream.start", top_k=req.top_k, request_id=request_id)
+            log.info(
+                "query.stream.start",
+                top_k=req.top_k,
+                debug=debug,
+                request_id=request_id,
+            )
             try:
                 chunks = stream_answer(req.q, top_k=req.top_k)
             except LLMError as exc:
@@ -156,9 +168,10 @@ def query(req: QueryRequest, request: Request, stream: bool = Query(False)) -> A
             "query.complete",
             stream=False,
             top_k=req.top_k,
+            debug=debug,
             request_id=request_id,
         )
-        return result
+        return build_query_response(result, debug=debug)
     except LLMError as exc:
         log.warning("query.llm_error", error=str(exc), request_id=request_id)
         return _llm_error_response(exc)

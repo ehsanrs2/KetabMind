@@ -63,4 +63,4 @@ def test_query_returns_fallback_for_irrelevant_question(
     assert response.status_code == 200
     payload = response.json()
     assert "Not enough information to answer accurately." in payload.get("answer", "")
-    assert payload.get("contexts") == []
+    assert payload.get("citations") == []
