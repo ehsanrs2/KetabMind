@@ -109,9 +109,9 @@ def test_index_query_phase1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     assert query_response.status_code == 200
     query_payload = query_response.json()
-    contexts = query_payload.get("contexts", [])
-    assert contexts, "Query response did not include any contexts"
-    citation = contexts[0]
+    citations = query_payload.get("citations", [])
+    assert citations, "Query response did not include any citations"
+    citation = citations[0]
     assert citation["book_id"] == book_id
     assert citation["version"] == version
     assert citation.get("page_num") == target_payload.get("page_num")
