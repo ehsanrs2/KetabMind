@@ -51,8 +51,10 @@ The design emphasizes multilingual (especially Persian/English) support, reprodu
   * `EMBED_MODEL=multilingual`
   * `EMBED_MODEL_NAME=bge-m3` (or e5-base-multilingual)
 * **Storage:** Ensure embeddings align with Qdrant schema.
-* **Model updates:** Clear old Qdrant collections when switching models.
-* **Optimization:** Quantization (4/8-bit) for RTX 3060; batching support for multiple queries.
+* **Quantization:** Support configurable 4/8-bit quantization via `EMBED_QUANT`, with safe fallbacks to full precision when unsupported.
+* **Batching:** Expose `BATCH_SIZE` to batch embedding requests, automatically tuning for throughput vs. memory.
+* **Fallbacks:** Provide CPU execution and `mock` embedding backends for development/testing when GPUs are unavailable.
+* **Collection management:** Recreate or clear Qdrant collections when switching models, quantization levels, or dimensionality.
 
 ---
 
