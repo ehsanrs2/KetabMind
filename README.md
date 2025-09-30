@@ -32,6 +32,37 @@ curl -X POST "http://localhost:8000/query" \
   -d '{"q": "Summarize chapter 3", "top_k": 5}'
 ```
 
+Phase 1 – Ingestion & Normalization
+-----------------------------------
+
+### Environment variables
+
+- `OCR_FA`: Enable Persian OCR fallback with Tesseract for scanned PDFs.
+- `TESSDATA_PREFIX`: Path to the Tesseract language data files (required when `OCR_FA=true`).
+- `NORMALIZE_FA`: Toggle Farsi-specific normalization pipeline prior to chunking.
+
+### Example ingestion request
+
+```bash
+curl -X POST "http://localhost:8000/index" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "path": "/absolute/path/to/book.pdf",
+        "collection": "books",
+        "metadata": {
+          "author": "A. Author",
+          "year": 2020,
+          "subject": "mathematics"
+        }
+      }'
+```
+
+### CLI shortcut
+
+```bash
+make ingest-pdf INPUT=book.pdf AUTHOR="A. Author" YEAR=2020 SUBJECT=math
+```
+
 Embedding models
 
 - Set `EMBED_MODEL` to select the embedder:
