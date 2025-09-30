@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Mapping, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Protocol, TypeAlias, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -31,7 +31,8 @@ class VectorStore:
         *,
         mode: str,
         collection: str,
-        vector_size: int,
+        vector_size: int | None = None,
+        embedding_adapter: Any | None = None,
         location: str | None = None,
         url: str | None = None,
     ) -> None:
@@ -41,7 +42,18 @@ class VectorStore:
         else:
             assert url, "QDRANT_URL is required for remote mode"
             self.client = QdrantClient(url=url)
-        self.vector_size = vector_size
+        if embedding_adapter is not None:
+            adapter_dim = getattr(embedding_adapter, "dim", None)
+            if adapter_dim is None:
+                msg = "embedding_adapter must expose a 'dim' attribute"
+                raise AttributeError(msg)
+            self.vector_size = int(adapter_dim)
+        elif vector_size is not None:
+            self.vector_size = int(vector_size)
+        else:
+            msg = "vector_size or embedding_adapter is required"
+            raise ValueError(msg)
+        self.ensure_collection()
 
     def __enter__(self) -> "VectorStore":  # pragma: no cover - simple context helper
         return self
@@ -55,27 +67,39 @@ class VectorStore:
             close()
 
     def ensure_collection(self) -> None:
-        current = self._current_vector_size()
+        self.recreate_collection_if_needed(self.collection, self.vector_size)
+
+    def recreate_collection_if_needed(self, name: str, dim: int) -> None:
+        current = self._current_vector_size(name)
         if current is None:
             self.client.recreate_collection(
-                collection_name=self.collection,
-                vectors_config=rest.VectorParams(size=self.vector_size, distance=rest.Distance.COSINE),
+                collection_name=name,
+                vectors_config=rest.VectorParams(size=dim, distance=rest.Distance.COSINE),
             )
             return
-        if current != self.vector_size:
+        if current == dim:
+            return
+        log.warning(
+            "recreating_qdrant_collection_due_to_dim_mismatch",
+            collection=name,
+            previous_dim=current,
+            requested_dim=dim,
+        )
+        try:
+            self.client.delete_collection(collection_name=name)
+        except Exception:
             log.warning(
-                "recreating_qdrant_collection_due_to_dim_mismatch",
-                collection=self.collection,
-                previous_dim=current,
-                requested_dim=self.vector_size,
+                "failed_deleting_qdrant_collection_before_recreate",
+                collection=name,
+                exc_info=True,
             )
-            self.client.recreate_collection(
-                collection_name=self.collection,
-                vectors_config=rest.VectorParams(size=self.vector_size, distance=rest.Distance.COSINE),
-            )
+        self.client.recreate_collection(
+            collection_name=name,
+            vectors_config=rest.VectorParams(size=dim, distance=rest.Distance.COSINE),
+        )
 
     def delete_collection(self) -> None:
-        self.client.delete_collection(self.collection)
+        self.client.delete_collection(collection_name=self.collection)
 
     def upsert(
         self,
@@ -155,9 +179,9 @@ class VectorStore:
             return item.tolist()
         return item
 
-    def _current_vector_size(self) -> int | None:
+    def _current_vector_size(self, collection_name: str | None = None) -> int | None:
         try:
-            info = self.client.get_collection(self.collection)
+            info = self.client.get_collection(collection_name or self.collection)
         except Exception:
             return None
         params = getattr(getattr(info, "config", None), "params", None)
