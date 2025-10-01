@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import sys
+import types
+from typing import Any
+
 import pytest
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient
+from fastapi import Request, URL
 
 from core.answer import answerer
 from core.retrieve.retriever import ScoredChunk
@@ -33,20 +37,37 @@ class StubLLM:
 
 @pytest.fixture(autouse=True)
 def _stub_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "numpy",
+        types.SimpleNamespace(asarray=lambda data, dtype=None: data),
+    )
+    index_stub = types.ModuleType("core.index")
+
+    class _IndexResult:
+        def __init__(self, **kwargs: Any) -> None:
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    index_stub.IndexResult = _IndexResult
+    index_stub.find_indexed_file = lambda *args, **kwargs: None
+    index_stub.index_path = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "core.index", index_stub)
     monkeypatch.setattr(answerer, "_retriever", StubRetriever())
     monkeypatch.setattr(answerer, "get_llm", lambda: StubLLM())
 
 
 def test_query_debug_true() -> None:
-    from apps.api.main import app  # noqa: PLC0415
+    from apps.api.main import QueryRequest, query  # noqa: PLC0415
 
-    client = TestClient(app)
-    response = client.post("/query?debug=true", json={"q": "question", "top_k": 1})
-    assert response.status_code == 200
-    payload = response.json()
+    request = Request("POST", URL("/query"))
+    payload = query(QueryRequest(q="question", top_k=1), request=request, stream=False, debug=True)
 
     citations = payload.get("citations")
-    assert citations and citations[0]["page_num"] == 5
+    assert citations == ["[book-1:5]"]
+
+    meta = payload.get("meta")
+    assert meta == {"lang": "en", "coverage": 0.0, "confidence": 0.6}
 
     debug = payload.get("debug")
     assert debug is not None
@@ -65,12 +86,11 @@ def test_query_debug_true() -> None:
 
 
 def test_query_debug_false() -> None:
-    from apps.api.main import app  # noqa: PLC0415
+    from apps.api.main import QueryRequest, query  # noqa: PLC0415
 
-    client = TestClient(app)
-    response = client.post("/query", json={"q": "question", "top_k": 1})
-    assert response.status_code == 200
-    payload = response.json()
+    request = Request("POST", URL("/query"))
+    payload = query(QueryRequest(q="question", top_k=1), request=request, stream=False, debug=False)
 
-    assert payload.get("citations")
+    assert payload.get("citations") == ["[book-1:5]"]
+    assert payload.get("meta") == {"lang": "en", "coverage": 0.0, "confidence": 0.6}
     assert "debug" not in payload
