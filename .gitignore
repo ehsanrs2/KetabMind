@@ -11,3 +11,6 @@ qdrant_storage/
 data.json
 node_modules/
 .next/
+
+!data/qdrant/
+!data/qdrant/.gitkeep

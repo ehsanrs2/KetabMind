@@ -1,29 +1,101 @@
 services:
-  qdrant:
-    image: qdrant/qdrant:v1.8.4
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - ./qdrant_storage:/qdrant/storage
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    command: ["poetry", "run", "uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       - QDRANT_MODE=remote
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION=books
       - EMBED_MODEL=small
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./data/uploads:/data/uploads
     ports:
       - "8000:8000"
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ketabmind
+
   ui:
     build:
       context: ./apps/ui
+      dockerfile: Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000
     ports:
       - "3000:3000"
     depends_on:
       - api
+    networks:
+      - ketabmind
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ketabmind
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    networks:
+      - ketabmind
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+      - qdrant
+    networks:
+      - ketabmind
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - ketabmind
+
+networks:
+  ketabmind:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
