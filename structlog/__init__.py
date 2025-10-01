@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping
@@ -15,17 +16,30 @@ __all__ = [
 ]
 
 
+_processors: list[Callable[[Any, str, dict[str, Any]], Any]] = []
+_wrapper_factory: Callable[..., "_Logger"] | None = None
+
+
 @dataclass
 class _Logger:
     name: str
 
-    def bind(self, **_: Any) -> "_Logger":  # pragma: no cover - compatibility helper
+    def bind(self, **_: Any) -> "_Logger":  # pragma: no cover - logging helper
         return self
 
-    def _log(self, level: str, event: str, **kwargs: Any) -> None:  # pragma: no cover - logging helper
-        message = f"[{level}] {self.name}: {event}"
-        if kwargs:
-            message += " " + " ".join(f"{k}={v!r}" for k, v in kwargs.items())
+    def _run_processors(self, level: str, event: str, event_dict: dict[str, Any]) -> Any:
+        current = event_dict
+        for processor in _processors:
+            current = processor(self, level, current)
+        return current
+
+    def _log(self, level: str, event: str, **kwargs: Any) -> None:
+        event_dict: dict[str, Any] = {"event": event, **kwargs}
+        processed = self._run_processors(level, event, event_dict)
+        if isinstance(processed, Mapping):
+            message = json.dumps(processed)
+        else:
+            message = str(processed)
         logging.getLogger(self.name).log(getattr(logging, level), message)
 
     def info(self, event: str, **kwargs: Any) -> None:
@@ -38,13 +52,14 @@ class _Logger:
         self._log("ERROR", event, **kwargs)
 
     def exception(self, event: str, **kwargs: Any) -> None:
+        kwargs.setdefault("exc_info", True)
         self._log("ERROR", event, **kwargs)
 
     def debug(self, event: str, **kwargs: Any) -> None:
         self._log("DEBUG", event, **kwargs)
 
 
-class processors:  # pragma: no cover - minimal stubs
+class processors:  # pragma: no cover - minimal implementations
     class TimeStamper:
         def __init__(self, fmt: str = "iso") -> None:
             self.fmt = fmt
@@ -63,6 +78,8 @@ class processors:  # pragma: no cover - minimal stubs
 
     @staticmethod
     def format_exc_info(logger: Any, name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+        if event_dict.get("exc_info") and isinstance(event_dict["exc_info"], bool):
+            event_dict.pop("exc_info", None)
         return event_dict
 
     class JSONRenderer:
@@ -70,17 +87,27 @@ class processors:  # pragma: no cover - minimal stubs
             return event_dict
 
 
-def configure(*_, **__) -> None:  # pragma: no cover - configuration stub
-    return None
+def configure(
+    *,
+    processors: Iterable[Callable[[Any, str, dict[str, Any]], Any]] | None = None,
+    wrapper_class: Callable[..., _Logger] | None = None,
+    logger_factory: Callable[..., Any] | None = None,
+    cache_logger_on_first_use: bool | None = None,
+) -> None:
+    del logger_factory, cache_logger_on_first_use
+    global _processors, _wrapper_factory
+    _processors = list(processors or [])
+    _wrapper_factory = wrapper_class
 
 
-def make_filtering_bound_logger(level: int) -> Callable[..., _Logger]:  # pragma: no cover - stub
-    def factory(*args: Any, **kwargs: Any) -> _Logger:
-        name = args[0] if args else kwargs.get("name", "structlog")
-        return _Logger(str(name))
+def make_filtering_bound_logger(level: int) -> Callable[..., _Logger]:  # pragma: no cover - level unused
+    def factory(name: str | None = None, **_: Any) -> _Logger:
+        return _Logger(name or "structlog")
 
     return factory
 
 
 def get_logger(name: str | None = None) -> _Logger:
-    return _Logger(name or "structlog")
+    if _wrapper_factory is None:
+        return _Logger(name or "structlog")
+    return _wrapper_factory(name=name or "structlog")

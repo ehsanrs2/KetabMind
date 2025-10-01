@@ -131,8 +131,16 @@ class FastAPI:
         self._routes: Dict[tuple[str, str], Callable[..., Any]] = {}
         self._middleware: list[Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]] = []
 
-    def add_middleware(self, middleware_class: type[Any], **_: Any) -> None:  # pragma: no cover - compatibility no-op
-        return None
+    def add_middleware(self, middleware_class: type[Any], **options: Any) -> None:
+        middleware = middleware_class(self, **options)
+
+        async def wrapper(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+            result = middleware(request, call_next)
+            if inspect.isawaitable(result):
+                return await result  # type: ignore[return-value]
+            return result  # type: ignore[return-value]
+
+        self._middleware.append(wrapper)
 
     def middleware(self, typ: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         if typ != "http":

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 import tempfile
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
@@ -9,10 +8,10 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import structlog
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.middleware import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from utils.pydantic_compat import BaseModel
-from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from apps.api.routes.query import build_query_response
 from apps.api.schemas import IndexRequest, Metadata
@@ -20,7 +19,7 @@ from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
 from core.index import IndexResult, find_indexed_file, index_path
-from core.logging import configure_logging
+from utils.logging import configure_logging
 from utils.hash import sha256_file
 
 if TYPE_CHECKING:
@@ -36,6 +35,7 @@ configure_logging()
 log = structlog.get_logger(__name__)
 
 app = FastAPI(title="KetabMind API")
+app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -97,45 +97,22 @@ def health() -> dict[str, str]:
 @_post("/query")
 def query(
     req: QueryRequest,
-    request: Request,
+    _request: Request,
     stream: bool = Query(False),
     debug: bool = Query(False),
 ) -> Any:
-    request_id = getattr(request.state, "request_id", None)
-    log.info(
-        "query.received",
-        stream=stream,
-        top_k=req.top_k,
-        debug=debug,
-        request_id=request_id,
-    )
+    log.info("query.received", stream=stream, top_k=req.top_k, debug=debug)
     if stream:
         def gen() -> Iterable[str]:
-            if request_id is not None:
-                clear_contextvars()
-                bind_contextvars(request_id=request_id)
-            log.info(
-                "query.stream.start",
-                top_k=req.top_k,
-                debug=debug,
-                request_id=request_id,
-            )
+            log.info("query.stream.start", top_k=req.top_k, debug=debug)
             try:
                 chunks = stream_answer(req.q, top_k=req.top_k)
             except LLMError as exc:
-                log.warning(
-                    "query.stream.llm_error",
-                    error=str(exc),
-                    request_id=request_id,
-                )
+                log.warning("query.stream.llm_error", error=str(exc), exc_info=exc)
                 yield json.dumps({"error": str(exc)}) + "\n"
                 return
             except Exception as exc:  # pragma: no cover - defensive
-                log.exception(
-                    "query.stream.failure",
-                    error=str(exc),
-                    request_id=request_id,
-                )
+                log.exception("query.stream.failure", error=str(exc))
                 yield json.dumps({"error": str(exc)}) + "\n"
                 return
 
@@ -143,37 +120,21 @@ def query(
                 for chunk in chunks:
                     yield json.dumps(chunk) + "\n"
             except LLMError as exc:
-                log.warning(
-                    "query.stream.llm_error",
-                    error=str(exc),
-                    request_id=request_id,
-                )
+                log.warning("query.stream.llm_error", error=str(exc), exc_info=exc)
                 yield json.dumps({"error": str(exc)}) + "\n"
             except Exception as exc:  # pragma: no cover - defensive
-                log.exception(
-                    "query.stream.failure",
-                    error=str(exc),
-                    request_id=request_id,
-                )
+                log.exception("query.stream.failure", error=str(exc))
                 yield json.dumps({"error": str(exc)}) + "\n"
             else:
-                log.info("query.stream.complete", request_id=request_id)
-            finally:
-                clear_contextvars()
+                log.info("query.stream.complete")
 
         return StreamingResponse(gen(), media_type="application/json")
     try:
         result = answer(req.q, top_k=req.top_k)
-        log.info(
-            "query.complete",
-            stream=False,
-            top_k=req.top_k,
-            debug=debug,
-            request_id=request_id,
-        )
+        log.info("query.complete", stream=False, top_k=req.top_k, debug=debug)
         return build_query_response(result, debug=debug)
     except LLMError as exc:
-        log.warning("query.llm_error", error=str(exc), request_id=request_id)
+        log.warning("query.llm_error", error=str(exc), exc_info=exc)
         return _llm_error_response(exc)
 
 
@@ -253,37 +214,3 @@ async def upload(
     return payload
 
 
-@app.middleware("http")
-async def add_request_id(
-    request: Request, call_next: Callable[[Request], Awaitable[Any]]
-) -> Any:
-    clear_contextvars()
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    bind_contextvars(request_id=request_id)
-    request.state.request_id = request_id
-    log.info(
-        "request.start",
-        method=request.method,
-        path=request.url.path,
-        request_id=request_id,
-    )
-    try:
-        response = await call_next(request)
-        response.headers["x-request-id"] = request_id
-        log.info(
-            "request.finish",
-            status_code=response.status_code,
-            request_id=request_id,
-        )
-        return response
-    except Exception as exc:  # pragma: no cover - defensive
-        log.exception(
-            "request.error",
-            error=str(exc),
-            method=request.method,
-            path=request.url.path,
-            request_id=request_id,
-        )
-        raise
-    finally:
-        clear_contextvars()
