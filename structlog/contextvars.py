@@ -3,20 +3,21 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any
 
-_request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
+_context: ContextVar[dict[str, Any]] = ContextVar("structlog_context", default={})
 
 
-def bind_contextvars(**kwargs: Any) -> None:  # pragma: no cover - simple stub
-    if "request_id" in kwargs:
-        _request_id.set(str(kwargs["request_id"]))
+def bind_contextvars(**kwargs: Any) -> None:
+    current = dict(_context.get())
+    current.update(kwargs)
+    _context.set(current)
 
 
-def clear_contextvars() -> None:  # pragma: no cover - simple stub
-    _request_id.set(None)
+def clear_contextvars() -> None:
+    _context.set({})
 
 
-def merge_contextvars(event_dict: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover - simple stub
-    request_id = _request_id.get()
-    if request_id is not None:
-        event_dict.setdefault("request_id", request_id)
-    return event_dict
+def merge_contextvars(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+    context = _context.get()
+    merged = dict(context)
+    merged.update(event_dict)
+    return merged

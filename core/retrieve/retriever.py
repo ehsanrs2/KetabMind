@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping, MutableMapping, Protocol, Sequence, cast
+
+import structlog
 
 from caching import LRUCache
 from core.config import settings
@@ -119,12 +119,7 @@ def _parse_weights(raw: str) -> dict[str, float]:
     return dict(weights)
 
 
-_structlog_spec = importlib.util.find_spec("structlog")
-if _structlog_spec is not None:  # pragma: no cover - optional dependency
-    structlog = importlib.import_module("structlog")
-    log = structlog.get_logger(__name__)
-else:  # pragma: no cover - fallback for environments without structlog
-    log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 class Retriever:

@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import os
 from collections.abc import Iterable
 from typing import List, Optional
+
+import structlog
 
 try:
     import torch
@@ -23,7 +24,7 @@ except ImportError:  # pragma: no cover - optional dependency
     SentenceTransformer = None  # type: ignore
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class EmbeddingAdapter:
