@@ -136,6 +136,47 @@ Troubleshooting
 - **GPU out-of-memory:** Decrease `BATCH_SIZE`, disable the reranker (`RERANKER_ENABLED=false`), or switch to CPU inference for the reranker component.
 - **Request timeouts:** Reduce `top_k`, lower reranker weight in `HYBRID_WEIGHTS`, or increase the service timeout settings (for example, `REQUEST_TIMEOUT` in `.env`).
 
+Phase 4 – Answer Synthesis & Advanced Self-RAG
+----------------------------------------------
+
+### Environment variables
+
+- `ANSWER_STYLE`: Controls formatting (e.g. `bullets`, `paragraph`).
+- `CITATION_REQUIRED`: When `true`, the answer agent must cite every factual statement.
+- `COVERAGE_THRESHOLD`: Minimum percentage of retrieved chunks that must map to cited answer spans before self-RAG retries.
+- `CONFIDENCE_RULE`: Policy string describing when the agent is allowed to answer vs. refuse (e.g. `require_citation`).
+- `BUDGET_MAX_CHUNKS`: Cap on the total chunk budget per query for initial and retry passes.
+
+### Example query with debug output
+
+```bash
+curl "http://localhost:8000/query?debug=true" \
+  -H "Content-Type: application/json" \
+  -d '{"q": "Explain the main argument in chapter 2", "top_k": 5}'
+```
+
+Sample response (`debug=true`):
+
+```json
+{
+  "answer": "- Chapter 2 argues that equitable access to textbooks improves retention rates by 20%. [book123:45-46]\n- The authors cite field trials showing higher exam scores when digital copies are distributed early. [book123:47]",
+  "citations": [
+    {"book_id": "book123", "page_start": 45, "page_end": 46},
+    {"book_id": "book123", "page_start": 47, "page_end": 47}
+  ],
+  "coverage": {
+    "retrieved_chunks": 6,
+    "cited_chunks": 5,
+    "percentage": 83.3
+  },
+  "debug": {
+    "pass": 2,
+    "reason": "coverage_below_threshold",
+    "budget": {"max_chunks": 12, "used": 10}
+  }
+}
+```
+
 Running tests
 -------------
 

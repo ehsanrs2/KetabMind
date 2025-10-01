@@ -82,8 +82,10 @@ The design emphasizes multilingual (especially Persian/English) support, reprodu
 * **Bilingual template:** Detect query language; respond in same language.
 * **Citation format:** `[bookID:page_start-page_end]`.
 * **Formatting:** Use bullet-points for clarity, include transparent citations.
-* **Fallback:** If evidence insufficient, return: *“Not enough information to answer accurately.”*
-* **Self-RAG:** If citation coverage is low, trigger a second retrieval+answer pass.
+* **Citation enforcement:** Refuse to surface unverifiable claims when `CITATION_REQUIRED=true`; every factual statement must map to at least one retrieved chunk ID.
+* **Coverage computation:** Attach the per-pass coverage metrics (cited chunks ÷ retrieved chunks) needed by downstream analytics and the validation agent.
+* **Refusal policy:** When `CONFIDENCE_RULE` evaluates to “insufficient evidence,” respond with *“Not enough information to answer accurately.”* and include no speculative text.
+* **Second-pass trigger:** Emit a `coverage_below_threshold` signal whenever the observed coverage falls beneath `COVERAGE_THRESHOLD`, allowing the Self-RAG agent to launch a retry.
 
 ---
 
@@ -109,6 +111,17 @@ The design emphasizes multilingual (especially Persian/English) support, reprodu
 * Compute **Exact Match (EM)**, **F1**, and **Citation Coverage** (percentage of answer sentences backed by retrieved contexts).
 * Tokenize Persian answers word-level for F1.
 * Run evaluations regularly and log results.
+
+---
+
+### 8. Self-RAG & Validation Agent
+
+**Responsibility:** Monitor answer quality, enforce coverage thresholds, and coordinate retry passes.
+
+* **Citation enforcement:** Reject answers that lack citations when policy requires them; annotate violations for logging.
+* **Coverage computation:** Recalculate coverage using the raw retrieval payloads and answer spans to confirm the prompting agent’s self-reported metrics.
+* **Refusal policy:** If a retry still fails to meet `COVERAGE_THRESHOLD` or violates `CONFIDENCE_RULE`, instruct the answer agent to return the refusal template.
+* **Second-pass logic:** When coverage is low yet budget remains (`BUDGET_MAX_CHUNKS` not exhausted), request an expanded retrieval set and initiate a second (or final) synthesis pass with updated context.
 
 ---
 
