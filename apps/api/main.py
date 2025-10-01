@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import gzip
 import json
+import math
 import tempfile
 import time
 from collections.abc import Callable, Iterable
+from types import SimpleNamespace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -12,6 +15,8 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request,
 from fastapi.middleware import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from limits import RateLimitItemPerSecond
+from slowapi import Limiter
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     Counter,
@@ -44,37 +49,140 @@ configure_logging()
 
 log = structlog.get_logger(__name__)
 
+
+def _client_identifier(request: Request) -> str:
+    headers = getattr(request, "headers", {})
+    forwarded = headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()
+    real_ip = headers.get("x-real-ip")
+    if real_ip:
+        return real_ip
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    if host:
+        return host
+    return "127.0.0.1"
+
+
+class _GZipMiddleware:
+    def __init__(self, app: Any, minimum_size: int = 500) -> None:
+        self.app = app
+        self.minimum_size = minimum_size
+
+    async def __call__(self, request: Request, call_next: Callable[[Request], Any]) -> Response:
+        response = await call_next(request)
+        body = getattr(response, "_content", None)
+        if body is None:
+            return response
+        if isinstance(body, bytes):
+            raw = body
+        elif isinstance(body, str):
+            raw = body.encode("utf-8")
+        else:
+            try:
+                raw = json.dumps(body).encode("utf-8")
+            except TypeError:
+                return response
+        if len(raw) < self.minimum_size:
+            return response
+        compressed = gzip.compress(raw)
+        response.headers.setdefault("content-encoding", "gzip")
+        response.headers.setdefault("vary", "Accept-Encoding")
+        response.headers["content-length"] = str(len(compressed))
+        response._content = compressed  # type: ignore[attr-defined]
+        return response
+
+
 app = FastAPI(title="KetabMind API")
+
+rate_limit_qps = settings.rate_limit_qps
+limiter_enabled = bool(rate_limit_qps and rate_limit_qps > 0)
+default_limits: list[str] = []
+if limiter_enabled:
+    per_second = max(1, math.ceil(rate_limit_qps))
+    default_limits.append(f"{per_second}/second")
+
+limiter = Limiter(
+    key_func=lambda request: _client_identifier(request),
+    default_limits=default_limits,
+    headers_enabled=True,
+    enabled=limiter_enabled,
+)
+if not hasattr(app, "state"):
+    app.state = SimpleNamespace()
+app.state.limiter = limiter
+
+_GLOBAL_RATE_LIMIT: RateLimitItemPerSecond | None = None
+_QUERY_RATE_LIMIT: RateLimitItemPerSecond | None = None
+if limiter.enabled and rate_limit_qps:
+    base_limit = max(1, math.ceil(rate_limit_qps))
+    _GLOBAL_RATE_LIMIT = RateLimitItemPerSecond(base_limit, 1)
+    query_per_second = max(1, math.ceil(base_limit / 2))
+    if query_per_second >= base_limit and base_limit > 1:
+        query_per_second = base_limit - 1
+    _QUERY_RATE_LIMIT = RateLimitItemPerSecond(max(1, query_per_second), 1)
+
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(_GZipMiddleware, minimum_size=500)
+
+cors_allow_origins = settings.cors_allow_origins or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-REQUEST_COUNTER = Counter(
-    "api_requests_total",
-    "Total number of API requests",
-    labelnames=("path", "method", "status"),
-)
-REQUEST_LATENCY = Histogram(
-    "api_request_latency_seconds",
-    "Latency of API requests in seconds",
-    labelnames=("path", "method"),
-)
-ERROR_COUNTER = Counter(
-    "api_errors_total",
-    "Total number of API errors",
-    labelnames=("path", "method"),
-)
-TOKEN_USAGE_GAUGE = Gauge(
-    "token_usage",
-    "Token usage reported by the Answer Agent",
-)
+if "REQUEST_COUNTER" not in globals():
+    REQUEST_COUNTER = Counter(
+        "api_requests_total",
+        "Total number of API requests",
+        labelnames=("path", "method", "status"),
+    )
+if "REQUEST_LATENCY" not in globals():
+    REQUEST_LATENCY = Histogram(
+        "api_request_latency_seconds",
+        "Latency of API requests in seconds",
+        labelnames=("path", "method"),
+    )
+if "ERROR_COUNTER" not in globals():
+    ERROR_COUNTER = Counter(
+        "api_errors_total",
+        "Total number of API errors",
+        labelnames=("path", "method"),
+    )
+if "TOKEN_USAGE_GAUGE" not in globals():
+    TOKEN_USAGE_GAUGE = Gauge(
+        "token_usage",
+        "Token usage reported by the Answer Agent",
+    )
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _rate_limit_response(retry_after: int) -> JSONResponse:
+    response = JSONResponse(
+        {"error": {"type": "rate_limit", "message": "Too many requests"}},
+        status_code=429,
+    )
+    response.headers["Retry-After"] = str(max(1, retry_after))
+    return response
+
+
+def _enforce_limit(
+    limit: RateLimitItemPerSecond | None, request: Request
+) -> int | None:
+    if not limiter.enabled or limit is None:
+        return None
+    key = limiter._key_func(request) if hasattr(limiter, "_key_func") else _client_identifier(request)
+    if limiter.limiter.test(limit, key):
+        limiter.limiter.hit(limit, key)
+        return None
+    reset_time, _remaining = limiter.limiter.get_window_stats(limit, key)
+    retry_after = max(1, int(math.ceil(reset_time - time.time())))
+    return retry_after
 
 
 def _get(path: str) -> Callable[[F], F]:
@@ -91,6 +199,13 @@ async def _metrics_middleware(request: Request, call_next: Callable[[Request], A
     method = request.method
     start = time.perf_counter()
     try:
+        retry_after = _enforce_limit(_GLOBAL_RATE_LIMIT, request)
+        if retry_after is not None:
+            duration = time.perf_counter() - start
+            response = _rate_limit_response(retry_after)
+            REQUEST_COUNTER.labels(path=path, method=method, status="429").inc()
+            REQUEST_LATENCY.labels(path=path, method=method).observe(duration)
+            return response
         response = await call_next(request)
     except Exception:
         duration = time.perf_counter() - start
@@ -115,6 +230,7 @@ async def _metrics_middleware(request: Request, call_next: Callable[[Request], A
 class QueryRequest(BaseModelProto):
     q: str
     top_k: int = 3
+
 
 
 def _find_indexed_file(*args: Any, **kwargs: Any) -> Any:
@@ -171,10 +287,13 @@ def ready() -> dict[str, str]:
 @_post("/query")
 def query(
     req: QueryRequest,
-    _request: Request,
+    request: Request,
     stream: bool = Query(False),
     debug: bool = Query(False),
 ) -> Any:
+    retry_after = _enforce_limit(_QUERY_RATE_LIMIT, request)
+    if retry_after is not None:
+        return _rate_limit_response(retry_after)
     log.info("query.received", stream=stream, top_k=req.top_k, debug=debug)
     if stream:
         def gen() -> Iterable[str]:
@@ -182,7 +301,7 @@ def query(
             try:
                 chunks = stream_answer(req.q, top_k=req.top_k)
             except LLMError as exc:
-                log.warning("query.stream.llm_error", error=str(exc), exc_info=exc)
+                log.warning("query.stream.llm_error", error=str(exc), exc_info=str(exc))
                 yield json.dumps({"error": str(exc)}) + "\n"
                 return
             except Exception as exc:  # pragma: no cover - defensive
@@ -194,7 +313,7 @@ def query(
                 for chunk in chunks:
                     yield json.dumps(chunk) + "\n"
             except LLMError as exc:
-                log.warning("query.stream.llm_error", error=str(exc), exc_info=exc)
+                log.warning("query.stream.llm_error", error=str(exc), exc_info=str(exc))
                 yield json.dumps({"error": str(exc)}) + "\n"
             except Exception as exc:  # pragma: no cover - defensive
                 log.exception("query.stream.failure", error=str(exc))
@@ -217,7 +336,7 @@ def query(
                     pass
         return payload
     except LLMError as exc:
-        log.warning("query.llm_error", error=str(exc), exc_info=exc)
+        log.warning("query.llm_error", error=str(exc), exc_info=str(exc))
         return _llm_error_response(exc)
 
 
