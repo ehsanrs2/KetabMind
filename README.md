@@ -7,6 +7,33 @@ Quickstart
 - make test
 - make run
 
+Backups
+-------
+
+Set the following environment variables before running the backup utilities:
+
+- `QDRANT_STORAGE_DIR`: Directory where Qdrant stores its collections (e.g. `./qdrant/storage`).
+- `UPLOAD_DIR`: Directory where uploaded documents are persisted.
+- `QDRANT_BACKUP_DIR`: Directory where compressed backups should be written.
+
+Create a compressed snapshot of the storage and upload directories:
+
+```bash
+QDRANT_STORAGE_DIR=/var/lib/qdrant \
+UPLOAD_DIR=/data/uploads \
+QDRANT_BACKUP_DIR=/backups \
+./scripts/backup_qdrant.sh
+```
+
+Restore from a specific backup archive (stops services via `docker compose stop` by default, then restarts and waits for readiness):
+
+```bash
+QDRANT_STORAGE_DIR=/var/lib/qdrant \
+UPLOAD_DIR=/data/uploads \
+QDRANT_BACKUP_DIR=/backups \
+./scripts/restore_qdrant.sh qdrant_backup_20240101010101.tar.gz
+```
+
 Pipeline Overview
 -----------------
 
