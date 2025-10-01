@@ -153,7 +153,13 @@ class Settings(BaseSettingsProto):
     rate_limit_qps: float | None = None
     cors_allow_origins: list[str] = ["*"]
 
+
     database_url: str = "sqlite:///./data/app.db"
+
+    auth_required: bool = False
+    jwt_secret: str = "change-me"
+    jwt_expiration_seconds: int = 3600
+
 
 
 _CACHE_KEYS = tuple(name.upper() for name in Settings.model_fields)

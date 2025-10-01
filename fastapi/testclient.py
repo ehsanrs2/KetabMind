@@ -11,6 +11,7 @@ class TestClient:
     __test__ = False  # prevent pytest from collecting this helper as a test case
     def __init__(self, app: FastAPI) -> None:
         self.app = app
+        self.cookies: Dict[str, str] = {}
 
     def get(self, path: str, *, headers: Mapping[str, str] | None = None, params: Mapping[str, Any] | None = None) -> Response:
         return self.request("GET", path, headers=headers, params=params)
@@ -90,17 +91,29 @@ class TestClient:
             query_params.update(dict(parse_qsl(query_string)))
         body = dict(json) if json is not None else None
         form_data = dict(data or {})
+        request_headers = dict(headers or {})
+        if self.cookies and not any(key.lower() == "cookie" for key in request_headers):
+            request_headers["Cookie"] = "; ".join(f"{name}={value}" for name, value in self.cookies.items())
         response = asyncio.run(
             self.app._call_route(
                 method,
                 path_only,
                 body=body,
                 files=files,
-                headers=headers,
+                headers=request_headers,
                 query_params=query_params,
                 form_data=form_data,
             )
         )
+        set_cookie = response.headers.get("set-cookie")
+        if set_cookie:
+            cookie_pair, *_rest = set_cookie.split(";", 1)
+            if "=" in cookie_pair:
+                name, value = cookie_pair.split("=", 1)
+                if value == "":
+                    self.cookies.pop(name, None)
+                else:
+                    self.cookies[name] = value
         return response
 
 

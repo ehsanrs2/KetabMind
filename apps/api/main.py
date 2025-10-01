@@ -26,6 +26,14 @@ from prometheus_client import (
 )
 from utils.pydantic_compat import BaseModel
 
+from apps.api.auth import (
+    authenticate_user,
+    create_access_token,
+    get_current_user,
+    get_user_bookmarks,
+    get_user_profile,
+    get_user_sessions,
+)
 from apps.api.routes.query import build_query_response
 from apps.api.schemas import IndexRequest, Metadata
 from core.answer.answerer import answer, stream_answer
@@ -232,6 +240,11 @@ class QueryRequest(BaseModelProto):
     top_k: int = 3
 
 
+class LoginRequest(BaseModelProto):
+    email: str
+    password: str
+
+
 
 def _find_indexed_file(*args: Any, **kwargs: Any) -> Any:
     from core.index import find_indexed_file as _find
@@ -284,12 +297,29 @@ def ready() -> dict[str, str]:
     return {"status": "ready"}
 
 
+@_post("/auth/login")
+def login(req: LoginRequest) -> JSONResponse:
+    record = authenticate_user(req.email, req.password)
+    token = create_access_token({"sub": record["id"], "email": record["email"]})
+    profile = get_user_profile(record["id"])
+    max_age = settings.jwt_expiration_seconds
+    cookie_parts = [f"access_token={token}", "HttpOnly", "Path=/", "SameSite=Lax"]
+    if max_age:
+        cookie_parts.append(f"Max-Age={int(max_age)}")
+    headers = {
+        "set-cookie": "; ".join(cookie_parts),
+        "x-csrf-token": token,
+    }
+    return JSONResponse({"user": profile}, headers=headers)
+
+
 @_post("/query")
 def query(
     req: QueryRequest,
     request: Request,
     stream: bool = Query(False),
     debug: bool = Query(False),
+    _user: dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     retry_after = _enforce_limit(_QUERY_RATE_LIMIT, request)
     if retry_after is not None:
@@ -341,7 +371,10 @@ def query(
 
 
 @_post("/index")
-def index(req: IndexRequest) -> dict[str, Any]:
+def index(
+    req: IndexRequest,
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     try:
         path = Path(req.path)
         if not path.exists():
@@ -382,6 +415,7 @@ def _upload_metadata(
 async def upload(
     file: UploadFile = File(...),  # noqa: B008
     meta: Metadata = Depends(_upload_metadata),
+    _user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     tmp_dir = Path(tempfile.gettempdir())
     filename = Path(file.filename or "upload")
@@ -414,6 +448,28 @@ async def upload(
     payload = _serialize_index_result(result)
     payload["path"] = str(dest)
     return payload
+
+
+@_get("/bookmarks")
+def bookmarks(
+    user_id: str | None = Query(None),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    target_id = user_id or current_user["id"]
+    if target_id != current_user["id"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
+    return {"bookmarks": get_user_bookmarks(target_id)}
+
+
+@_get("/sessions")
+def sessions(
+    user_id: str | None = Query(None),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    target_id = user_id or current_user["id"]
+    if target_id != current_user["id"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
+    return {"sessions": get_user_sessions(target_id)}
 
 
 @_get("/metrics")
