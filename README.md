@@ -204,6 +204,71 @@ Sample response (`debug=true`):
 }
 ```
 
+Phase 5 – System & DevOps
+-------------------------
+
+### Local Docker Compose workflow
+
+- Copy the environment template and adjust any overrides:
+
+  ```bash
+  cp .env.example .env
+  ```
+
+- Launch the full stack (API, UI, Qdrant, Ollama, Prometheus, Grafana):
+
+  ```bash
+  docker compose up --build
+  ```
+
+- Orchestrate via Makefile helpers:
+
+  ```bash
+  make up          # start services in the background
+  make logs        # tail the compose logs
+  make down        # stop and remove containers
+  ```
+
+- Grafana is available at `http://localhost:3001`, Prometheus at `http://localhost:9090`, the FastAPI backend at `http://localhost:8000`, and the Next.js UI at `http://localhost:3000`.
+
+### Core environment variables
+
+| Variable | Purpose | Default / Example |
+| --- | --- | --- |
+| `QDRANT_MODE` | Switches the API between embedded and remote Qdrant clients. | `remote` (docker compose) |
+| `QDRANT_URL` | Endpoint for the vector store. | `http://qdrant:6333` |
+| `QDRANT_COLLECTION` | Name of the active collection. | `books` |
+| `EMBED_MODEL` | Selects embedding backend (`mock`, `small`, `base`). | `small` |
+| `OLLAMA_HOST` | Base URL for the LLM runtime. | `http://ollama:11434` |
+| `NEXT_PUBLIC_API_URL` | UI -> API bridge, consumed by the Next.js frontend. | `http://api:8000` |
+| `GF_SECURITY_ADMIN_USER` / `GF_SECURITY_ADMIN_PASSWORD` | Grafana bootstrap credentials. | `admin` / `admin` |
+
+Additional Prometheus and Grafana settings can be tuned via the mounted config in `./prometheus` and `./grafana/provisioning`.
+
+### Common Make targets
+
+- `make setup` – install Python deps and configure pre-commit hooks.
+- `make lint` – run Ruff (lint + format check) and mypy.
+- `make test` – execute the full pytest suite.
+- `make run` – start the FastAPI server with autoreload for local dev without containers.
+- `make up` / `make down` / `make logs` / `make restart` – docker-compose lifecycle helpers.
+- `make seed` – load a sample dataset into the running docker-compose stack.
+- `make index-sample` – run the ingestion sample script against local files without containers.
+- `make qa` – launch the offline evaluation harness on `data/eval.jsonl`.
+
+### Observability snapshots
+
+![Grafana dashboard with latency and throughput panels](docs/images/grafana-dashboard.png)
+
+![Sample Prometheus /metrics output rendered in the browser](docs/images/prometheus-metrics.png)
+
+### Troubleshooting
+
+- **Container will not start:** Run `docker compose ps` to confirm health checks. Inspect failing service logs with `docker compose logs <service>` and ensure dependent services (e.g., Qdrant) are healthy.
+- **Permission denied on bind mounts:** The host user may not own `./data/*` directories. Fix with `sudo chown -R $USER:$USER data` (or adjust to your UID/GID) before starting Compose.
+- **Port conflicts:** Override host ports with `docker compose up -d --force-recreate -p ketabmind` after editing the published ports (e.g., `8000:8000` → `8080:8000`) or set environment variable overrides via `.env`.
+- **GPU not detected (future phases):** Ensure the NVIDIA Container Toolkit is installed, start Compose with `docker compose --profile gpu up`, and set `CUDA_VISIBLE_DEVICES`/`NVIDIA_VISIBLE_DEVICES` in `.env` to target available GPUs.
+
 Running tests
 -------------
 
