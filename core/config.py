@@ -150,6 +150,9 @@ class Settings(BaseSettingsProto):
     ingest_header_lines: int = 0
     ingest_footer_lines: int = 0
 
+    rate_limit_qps: float | None = None
+    cors_allow_origins: list[str] = ["*"]
+
 
 _CACHE_KEYS = tuple(name.upper() for name in Settings.model_fields)
 _cached_settings: Settings | None = None

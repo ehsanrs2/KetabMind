@@ -4,7 +4,7 @@ import asyncio
 import inspect
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Awaitable, Callable, Dict, Iterable, Mapping, MutableMapping, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterable, Mapping, MutableMapping, Optional, get_type_hints
 
 __all__ = [
     "FastAPI",
@@ -63,6 +63,9 @@ class StreamingResponse(Response):
             self.headers.setdefault("content-type", media_type)
 
     def iter_text(self) -> Iterable[str]:
+        yield from self._content
+
+    def iter_lines(self) -> Iterable[str]:  # pragma: no cover - simple alias
         yield from self._content
 
 
@@ -213,10 +216,11 @@ async def _invoke(
     form_data: Mapping[str, Any],
 ) -> Any:
     signature = inspect.signature(func)
+    annotations = get_type_hints(func, include_extras=True)
     kwargs: Dict[str, Any] = {}
     for name, param in signature.parameters.items():
         default = param.default
-        annotation = param.annotation
+        annotation = annotations.get(name, param.annotation)
         if isinstance(default, Depends):
             dependency = default.dependency
             dep_result = await _invoke(dependency, request, body, files, query_params, form_data)
@@ -240,6 +244,8 @@ async def _invoke(
                 kwargs[name] = annotation.model_validate(value)
             else:
                 kwargs[name] = value
+        elif body and hasattr(annotation, "model_validate"):
+            kwargs[name] = annotation.model_validate(body)
         else:
             if default is inspect._empty:
                 kwargs[name] = None

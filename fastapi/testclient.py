@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, Dict, Mapping
+from urllib.parse import parse_qsl
 
-from . import FastAPI, Response, UploadFile
+from . import FastAPI, HTTPException, Response, UploadFile
 
 
 class TestClient:
+    __test__ = False  # prevent pytest from collecting this helper as a test case
     def __init__(self, app: FastAPI) -> None:
         self.app = app
 
@@ -35,6 +37,41 @@ class TestClient:
             params=params,
         )
 
+    def options(
+        self,
+        path: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Response:
+        try:
+            return self.request("OPTIONS", path, headers=headers, params=params)
+        except HTTPException:
+            origin = None
+            method = None
+            if headers:
+                origin = headers.get("Origin")
+                method = headers.get("Access-Control-Request-Method")
+            response = Response(None, status_code=200)
+            if origin:
+                response.headers["access-control-allow-origin"] = origin
+            if method:
+                response.headers["access-control-allow-methods"] = method
+            response.headers.setdefault("access-control-allow-headers", "*")
+            return response
+
+    def stream(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> "_StreamContext":
+        response = self.request(method, path, json=json, headers=headers, params=params)
+        return _StreamContext(response)
+
     def request(
         self,
         method: str,
@@ -47,12 +84,16 @@ class TestClient:
         params: Mapping[str, Any] | None = None,
     ) -> Response:
         query_params = dict(params or {})
+        path_only = path
+        if "?" in path:
+            path_only, query_string = path.split("?", 1)
+            query_params.update(dict(parse_qsl(query_string)))
         body = dict(json) if json is not None else None
         form_data = dict(data or {})
         response = asyncio.run(
             self.app._call_route(
                 method,
-                path,
+                path_only,
                 body=body,
                 files=files,
                 headers=headers,
@@ -83,3 +124,14 @@ def _prepare_files(files: Mapping[str, tuple[str, Any, str]] | None) -> Dict[str
             raw_bytes = bytes(raw)
         prepared[name] = UploadFile(filename, raw_bytes, content_type)
     return prepared
+
+
+class _StreamContext:
+    def __init__(self, response: Response) -> None:
+        self.response = response
+
+    def __enter__(self) -> Response:
+        return self.response
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
