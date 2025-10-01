@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Iterator
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
+import re
 
+from answering.citations import build_citations
+from answering.guardrails import refusal_message, should_refuse
 from core import config
 from core.retrieve.retriever import Retriever, ScoredChunk
+from core.self_rag.validator import citation_coverage
 
 from .llm import LLM, ensure_stop_sequences, get_llm, truncate_to_token_budget
 from .template import (
@@ -24,6 +28,8 @@ MODEL_TOKENIZER_OVERRIDES: dict[str, str] = {
     "mock": "mock-character-tokenizer",
 }
 STOP_SEQUENCES: list[str] = []
+DEFAULT_REFUSAL_RULE = "balanced"
+_ARABIC_SCRIPT_RE = re.compile(r"[\u0600-\u06FF]")
 
 
 @dataclass(slots=True)
@@ -104,6 +110,37 @@ def _consume_response(result: str | Iterator[str]) -> str:
     return "".join(result)
 
 
+def _serialize_context(chunk: ScoredChunk) -> dict[str, Any]:
+    return {
+        "id": chunk.id,
+        "book_id": chunk.book_id,
+        "page": chunk.page,
+        "page_start": getattr(chunk, "page_start", chunk.page),
+        "page_end": getattr(chunk, "page_end", chunk.page),
+        "snippet": chunk.snippet,
+        "text": chunk.text,
+        "cosine": chunk.cosine,
+        "lexical": chunk.lexical,
+        "reranker": chunk.reranker,
+        "hybrid": chunk.hybrid,
+        "metadata": dict(chunk.metadata),
+    }
+
+
+def _average_hybrid(contexts: list[ScoredChunk]) -> float:
+    if not contexts:
+        return 0.0
+    return sum(chunk.hybrid for chunk in contexts) / len(contexts)
+
+
+def _detect_language(question: str) -> str:
+    return "fa" if _ARABIC_SCRIPT_RE.search(question) else "en"
+
+
+def _refusal_rule() -> str:
+    return (_get_env("ANSWER_REFUSAL_RULE") or DEFAULT_REFUSAL_RULE).strip()
+
+
 def answer(query: str, top_k: int = 8) -> dict[str, Any]:
     config = _load_config()
     contexts = _retriever.retrieve(query, top_k)
@@ -116,17 +153,26 @@ def answer(query: str, top_k: int = 8) -> dict[str, Any]:
         config.tokenizer_name,
         config.max_input_tokens,
     )
+    serialized_contexts = [_serialize_context(chunk) for chunk in selected_contexts]
     prompt = _prepare_prompt(query, selected_contexts, config)
     llm: LLM = get_llm()
     raw_answer = llm.generate(prompt, stream=False)
     answer_text = ensure_stop_sequences(_consume_response(raw_answer), config.stop_sequences)
+    language = _detect_language(query)
+    coverage = citation_coverage(answer_text, selected_contexts)
+    confidence = _average_hybrid(selected_contexts)
+    rule = _refusal_rule()
+    refused = should_refuse(coverage, confidence, rule)
+    if refused:
+        citations = build_citations(serialized_contexts, "[${book_id}:${page_start}-${page_end}]")
+        answer_text = refusal_message(language, citations)
     est_input_tokens = estimate_token_count(
         [query, *(ctx.text for ctx in selected_contexts)],
         config.tokenizer_name,
     )
     return {
         "answer": answer_text,
-        "contexts": [asdict(c) for c in selected_contexts],
+        "contexts": serialized_contexts,
         "debug": {
             "prompt": prompt,
             "backend": config.backend,
@@ -140,6 +186,12 @@ def answer(query: str, top_k: int = 8) -> dict[str, Any]:
                 "total_contexts": len(contexts),
                 "used_contexts": len(selected_contexts),
                 "est_input_tokens": est_input_tokens,
+                "coverage": coverage,
+                "confidence": confidence,
+            },
+            "guardrails": {
+                "rule": rule,
+                "refused": refused,
             },
         },
     }
@@ -159,6 +211,7 @@ def stream_answer(query: str, top_k: int = 8) -> Iterable[dict[str, Any]]:
         config.tokenizer_name,
         config.max_input_tokens,
     )
+    serialized_contexts = [_serialize_context(chunk) for chunk in selected_contexts]
     prompt = _prepare_prompt(query, selected_contexts, config)
     llm: LLM = get_llm()
     stream_result = llm.generate(prompt, stream=True)
@@ -166,11 +219,11 @@ def stream_answer(query: str, top_k: int = 8) -> Iterable[dict[str, Any]]:
         buffered = ensure_stop_sequences(stream_result, config.stop_sequences)
         if buffered:
             yield {"delta": buffered}
-        yield {"answer": buffered, "contexts": [asdict(c) for c in selected_contexts]}
+        yield {"answer": buffered, "contexts": serialized_contexts}
         return
     collected: list[str] = []
     for delta in stream_result:
         collected.append(delta)
         yield {"delta": delta}
     final_answer = ensure_stop_sequences("".join(collected), config.stop_sequences)
-    yield {"answer": final_answer, "contexts": [asdict(c) for c in selected_contexts]}
+    yield {"answer": final_answer, "contexts": serialized_contexts}
