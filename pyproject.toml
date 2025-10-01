@@ -26,6 +26,7 @@ scripts = "^3.0"
 pypdf = "^6.0.0"
 python-multipart = "^0.0.20"
 sentence-transformers = "^5.1.0"
+prometheus-client = "^0.20.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
