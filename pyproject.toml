@@ -29,6 +29,8 @@ sentence-transformers = "^5.1.0"
 prometheus-client = "^0.20.0"
 slowapi = "^0.1.9"
 starlette = "^0.37.2"
+sqlalchemy = "^2.0.34"
+alembic = "^1.13.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"

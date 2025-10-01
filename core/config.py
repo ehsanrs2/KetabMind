@@ -153,6 +153,8 @@ class Settings(BaseSettingsProto):
     rate_limit_qps: float | None = None
     cors_allow_origins: list[str] = ["*"]
 
+    database_url: str = "sqlite:///./data/app.db"
+
 
 _CACHE_KEYS = tuple(name.upper() for name in Settings.model_fields)
 _cached_settings: Settings | None = None
