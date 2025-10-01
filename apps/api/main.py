@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import tempfile
-from collections.abc import Awaitable, Callable, Iterable
+import time
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -10,7 +11,14 @@ import structlog
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 from utils.pydantic_compat import BaseModel
 
 from apps.api.routes.query import build_query_response
@@ -18,16 +26,18 @@ from apps.api.schemas import IndexRequest, Metadata
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
-from core.index import IndexResult, find_indexed_file, index_path
 from utils.logging import configure_logging
 from utils.hash import sha256_file
 
 if TYPE_CHECKING:
 
+    from core.index import IndexResult as IndexResultType
+
     class BaseModelProto:
         pass
 
 else:  # pragma: no cover - runtime import
+    IndexResultType = Any
     BaseModelProto = BaseModel
 
 configure_logging()
@@ -44,6 +54,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+REQUEST_COUNTER = Counter(
+    "api_requests_total",
+    "Total number of API requests",
+    labelnames=("path", "method", "status"),
+)
+REQUEST_LATENCY = Histogram(
+    "api_request_latency_seconds",
+    "Latency of API requests in seconds",
+    labelnames=("path", "method"),
+)
+ERROR_COUNTER = Counter(
+    "api_errors_total",
+    "Total number of API errors",
+    labelnames=("path", "method"),
+)
+TOKEN_USAGE_GAUGE = Gauge(
+    "token_usage",
+    "Token usage reported by the Answer Agent",
+)
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -55,9 +85,48 @@ def _post(path: str) -> Callable[[F], F]:
     return cast(Callable[[F], F], app.post(path))
 
 
+@app.middleware("http")
+async def _metrics_middleware(request: Request, call_next: Callable[[Request], Any]):
+    path = request.url.path
+    method = request.method
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration = time.perf_counter() - start
+        ERROR_COUNTER.labels(path=path, method=method).inc()
+        REQUEST_COUNTER.labels(path=path, method=method, status="500").inc()
+        REQUEST_LATENCY.labels(path=path, method=method).observe(duration)
+        raise
+
+    duration = time.perf_counter() - start
+    status_code = getattr(response, "status_code", 500)
+    REQUEST_COUNTER.labels(
+        path=path,
+        method=method,
+        status=str(status_code),
+    ).inc()
+    REQUEST_LATENCY.labels(path=path, method=method).observe(duration)
+    if status_code >= 500:
+        ERROR_COUNTER.labels(path=path, method=method).inc()
+    return response
+
+
 class QueryRequest(BaseModelProto):
     q: str
     top_k: int = 3
+
+
+def _find_indexed_file(*args: Any, **kwargs: Any) -> Any:
+    from core.index import find_indexed_file as _find
+
+    return _find(*args, **kwargs)
+
+
+def _index_path(*args: Any, **kwargs: Any) -> IndexResultType:
+    from core.index import index_path as _index
+
+    return _index(*args, **kwargs)
 
 
 def _llm_error_payload(exc: LLMError) -> tuple[int, dict[str, Any]]:
@@ -77,7 +146,7 @@ def _llm_error_response(exc: LLMError) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=payload)
 
 
-def _serialize_index_result(result: IndexResult) -> dict[str, Any]:
+def _serialize_index_result(result: IndexResultType) -> dict[str, Any]:
     return {
         "new": result.new,
         "skipped": result.skipped,
@@ -92,6 +161,11 @@ def _serialize_index_result(result: IndexResult) -> dict[str, Any]:
 @_get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@_get("/ready")
+def ready() -> dict[str, str]:
+    return {"status": "ready"}
 
 
 @_post("/query")
@@ -132,7 +206,16 @@ def query(
     try:
         result = answer(req.q, top_k=req.top_k)
         log.info("query.complete", stream=False, top_k=req.top_k, debug=debug)
-        return build_query_response(result, debug=debug)
+        payload = build_query_response(result, debug=debug)
+        meta = payload.get("meta") if isinstance(payload, dict) else None
+        if isinstance(meta, dict):
+            token_usage = meta.get("token_usage")
+            if token_usage is not None:
+                try:
+                    TOKEN_USAGE_GAUGE.set(float(token_usage))
+                except (TypeError, ValueError):  # pragma: no cover - defensive
+                    pass
+        return payload
     except LLMError as exc:
         log.warning("query.llm_error", error=str(exc), exc_info=exc)
         return _llm_error_response(exc)
@@ -146,7 +229,7 @@ def index(req: IndexRequest) -> dict[str, Any]:
             raise SystemExit(f"File not found: {path}")
         collection = req.collection or settings.qdrant_collection
         file_hash = sha256_file(path)
-        existing = find_indexed_file(collection, file_hash)
+        existing = _find_indexed_file(collection, file_hash)
         if existing:
             return {
                 "new": 0,
@@ -157,7 +240,7 @@ def index(req: IndexRequest) -> dict[str, Any]:
                 "file_hash": existing.file_hash,
                 "indexed_chunks": existing.indexed_chunks,
             }
-        result = index_path(
+        result = _index_path(
             path,
             collection=collection,
             file_hash=file_hash,
@@ -188,7 +271,7 @@ async def upload(
     try:
         collection = settings.qdrant_collection
         file_hash = sha256_file(dest)
-        existing = find_indexed_file(collection, file_hash)
+        existing = _find_indexed_file(collection, file_hash)
         if existing:
             payload = {
                 "new": 0,
@@ -201,7 +284,7 @@ async def upload(
                 "path": str(dest),
             }
             return payload
-        result = index_path(
+        result = _index_path(
             dest,
             collection=collection,
             file_hash=file_hash,
@@ -212,5 +295,10 @@ async def upload(
     payload = _serialize_index_result(result)
     payload["path"] = str(dest)
     return payload
+
+
+@_get("/metrics")
+def metrics() -> Response:
+    return Response(generate_latest().decode("utf-8"), headers={"content-type": CONTENT_TYPE_LATEST})
 
 
