@@ -79,7 +79,7 @@ def _ensure_qdrant_stub() -> None:
 
 _ensure_qdrant_stub()
 
-from app.main import app
+from app.main import app  # noqa: E402
 
 
 def _metric_value(metrics_text: str, metric: str, labels: dict[str, str]) -> float:

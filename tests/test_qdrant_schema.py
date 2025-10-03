@@ -9,7 +9,7 @@ qdrant = pytest.importorskip("qdrant_client")
 rest = pytest.importorskip("qdrant_client.http.models")
 QdrantClient = qdrant.QdrantClient
 
-from core.vector.qdrant_client import VectorStore
+from core.vector.qdrant_client import VectorStore  # noqa: E402
 
 
 def _vector_size(info: rest.CollectionInfo) -> int:

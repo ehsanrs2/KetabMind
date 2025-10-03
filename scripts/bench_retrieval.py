@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.retrieve.retriever import Retriever
+from core.retrieve.retriever import Retriever  # noqa: E402
 
 QUERY_COUNT = 100
 CANDIDATE_COUNT = 50

@@ -163,7 +163,7 @@ def reformulate_query(question: str, top_chunks: list[dict[str, Any]]) -> str:
         metadata = chunk.get("metadata")
         if isinstance(metadata, dict):
             entities = metadata.get("entities")
-            if isinstance(entities, (list, tuple)):
+            if isinstance(entities, list | tuple):
                 for entity in entities:
                     if not isinstance(entity, str):
                         continue

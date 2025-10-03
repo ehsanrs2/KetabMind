@@ -8,7 +8,8 @@ import zipfile
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import TypedDict
-from xml.etree import ElementTree as ET
+
+from defusedxml import ElementTree as ET
 
 
 class PageDict(TypedDict):

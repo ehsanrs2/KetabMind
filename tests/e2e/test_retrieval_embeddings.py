@@ -8,7 +8,7 @@ from embedding.adapter import EmbeddingAdapter
 
 
 def _dot(left: list[float], right: list[float]) -> float:
-    return sum(l * r for l, r in zip(left, right, strict=False))
+    return sum(left_val * right_val for left_val, right_val in zip(left, right, strict=False))
 
 
 def _tokenize(text: str) -> set[str]:

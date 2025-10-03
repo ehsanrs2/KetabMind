@@ -37,10 +37,7 @@ class _Logger:
     def _log(self, level: str, event: str, **kwargs: Any) -> None:
         event_dict: dict[str, Any] = {"event": event, **kwargs}
         processed = self._run_processors(level, event, event_dict)
-        if isinstance(processed, Mapping):
-            message = json.dumps(processed)
-        else:
-            message = str(processed)
+        message = json.dumps(processed) if isinstance(processed, Mapping) else str(processed)
         logging.getLogger(self.name).log(getattr(logging, level), message)
 
     def info(self, event: str, **kwargs: Any) -> None:

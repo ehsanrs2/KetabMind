@@ -176,7 +176,7 @@ def _first_marker_from_annotation(annotation: Any) -> _Param | None:
         # Annotated[T, meta1, meta2, ...]
         _, *meta = get_args(annotation)
         for m in meta:
-            if isinstance(m, (Query, Form, File, Depends)):
+            if isinstance(m, Query | Form | File | Depends):
                 return m
     return None
 

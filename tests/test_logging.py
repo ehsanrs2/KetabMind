@@ -39,7 +39,7 @@ def test_request_logging_includes_request_id_and_redaction(
 
     @app.get("/ping")
     def ping(_request: Request) -> dict[str, str]:
-        log.info("test.event", authorization="secret", token="abc123")
+        log.info("test.event", authorization="secret", token="abc123")  # noqa: S106
         return {"status": "ok"}
 
     client = TestClient(app)
@@ -65,4 +65,4 @@ def test_request_logging_includes_request_id_and_redaction(
     assert "status" in handler_log
     assert "latency_ms" in handler_log
     assert handler_log["authorization"] == "***REDACTED***"
-    assert handler_log["token"] == "***REDACTED***"
+    assert handler_log["token"] == "***REDACTED***"  # noqa: S105

@@ -6,8 +6,8 @@ import types
 import pytest
 
 pytest.importorskip("fastapi")
-from core.answer import answerer
-from fastapi.testclient import TestClient
+from core.answer import answerer  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 def _noop_index_path(*args: object, **kwargs: object) -> types.SimpleNamespace:

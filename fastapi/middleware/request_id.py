@@ -140,7 +140,4 @@ class RequestIDMiddleware:
         return None
 
     def _header_present(self, headers: list[tuple[bytes, bytes]]) -> bool:
-        for key, _ in headers:
-            if key.lower() == self._header_bytes:
-                return True
-        return False
+        return any(key.lower() == self._header_bytes for key, _ in headers)

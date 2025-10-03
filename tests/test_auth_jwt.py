@@ -4,6 +4,7 @@ import importlib
 import sys
 import time
 import types
+from pathlib import Path
 
 import pytest
 
@@ -103,9 +104,10 @@ def test_login_sets_cookie(auth_app) -> None:
     assert response.headers.get("x-csrf-token")
 
 
-def test_protected_route_without_cookie(auth_app) -> None:
+def test_protected_route_without_cookie(auth_app, tmp_path: Path) -> None:
     client = TestClient(auth_app)
-    response = client.post("/index", json={"path": "/tmp/missing.txt"})
+    missing_file = tmp_path / "missing.txt"
+    response = client.post("/index", json={"path": str(missing_file)})
     assert response.status_code == 401
 
 

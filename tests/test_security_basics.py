@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import importlib
+import logging
 from collections.abc import Callable
 from types import ModuleType
 
 import pytest
 
 from fastapi.testclient import TestClient
+
+log = logging.getLogger(__name__)
 
 
 def _reload_app(
@@ -28,7 +31,7 @@ def _reload_app(
         prometheus_client.REGISTRY = new_registry
         prometheus_client.metrics.REGISTRY = new_registry
     except Exception:  # pragma: no cover - defensive cleanup
-        pass
+        log.debug("prometheus.reset_failed", exc_info=True)
 
     importlib.reload(config)
 
