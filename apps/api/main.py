@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import gzip
+import hmac
+import hashlib
+import inspect
 import json
 import math
+import mimetypes
+import shutil
 import tempfile
 import time
 from collections.abc import Callable, Iterable
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import structlog
@@ -258,6 +265,12 @@ def _index_path(*args: Any, **kwargs: Any) -> IndexResultType:
     return _index(*args, **kwargs)
 
 
+def _update_indexed_path(*args: Any, **kwargs: Any) -> None:
+    from core.index import update_indexed_file_path as _update
+
+    _update(*args, **kwargs)
+
+
 def _llm_error_payload(exc: LLMError) -> tuple[int, dict[str, Any]]:
     if isinstance(exc, LLMTimeoutError):
         return (
@@ -285,6 +298,105 @@ def _serialize_index_result(result: IndexResultType) -> dict[str, Any]:
         "file_hash": result.file_hash,
         "indexed_chunks": result.indexed_chunks,
     }
+
+
+def _ensure_upload_root() -> Path:
+    upload_dir = settings.upload_dir
+    if not upload_dir:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload directory not configured")
+    root = Path(upload_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+async def _write_upload_to_tempfile(file: UploadFile, filename: Path) -> Path:
+    suffix = filename.suffix if filename.suffix else ""
+    data = await file.read()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(data)
+    close = getattr(file, "close", None)
+    if close:
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+    return Path(tmp.name)
+
+
+def _store_uploaded_file(src: Path, owner_id: str, book_id: str, filename: str) -> Path:
+    root = _ensure_upload_root()
+    target_dir = root / owner_id / book_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = target_dir / filename
+    if dest_path.exists():
+        dest_path.unlink()
+    shutil.move(str(src), dest_path)
+    return dest_path
+
+
+def _resolve_book_file(owner_id: str, book_id: str) -> Path | None:
+    root = _ensure_upload_root()
+    book_dir = root / owner_id / book_id
+    if not book_dir.is_dir():
+        return None
+    files = sorted(p for p in book_dir.iterdir() if p.is_file())
+    if not files:
+        return None
+    return files[0]
+
+
+def _encode_view_token(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    signature = hmac.new(
+        settings.jwt_secret.encode("utf-8"),
+        raw,
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def _decode_view_token(token: str) -> dict[str, Any]:
+    try:
+        encoded, signature = token.rsplit(".", 1)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token format") from exc
+    padding = "=" * (-len(encoded) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(encoded + padding)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token encoding") from exc
+    expected = hmac.new(
+        settings.jwt_secret.encode("utf-8"),
+        raw,
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid token signature")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload")
+    return payload
+
+
+def _build_signed_view(owner_id: str, book_id: str, filename: str, page: int) -> tuple[str, int]:
+    ttl = int(settings.upload_signed_url_ttl or 0)
+    if ttl <= 0:
+        ttl = 300
+    now = int(time.time())
+    expires = now + ttl
+    token = _encode_view_token(
+        {
+            "owner_id": owner_id,
+            "book_id": book_id,
+            "filename": filename,
+            "page": page,
+            "exp": expires,
+        }
+    )
+    return f"/static/books/{token}", expires
 
 
 @_get("/health")
@@ -407,8 +519,9 @@ def _upload_metadata(
     author: str | None = Form(None),
     year: str | None = Form(None),
     subject: str | None = Form(None),
+    title: str | None = Form(None),
 ) -> Metadata:
-    return Metadata(author=author, year=year, subject=subject)
+    return Metadata(author=author, year=year, subject=subject, title=title)
 
 
 @_post("/upload")
@@ -417,37 +530,93 @@ async def upload(
     meta: Metadata = Depends(_upload_metadata),
     _user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    tmp_dir = Path(tempfile.gettempdir())
     filename = Path(file.filename or "upload")
-    dest = tmp_dir / filename.name
-    dest.write_bytes(await file.read())
+    tmp_path = await _write_upload_to_tempfile(file, filename)
+    owner_id = str(_user.get("id") or "")
+    if not owner_id:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
     try:
         collection = settings.qdrant_collection
-        file_hash = sha256_file(dest)
+        file_hash = sha256_file(tmp_path)
         existing = _find_indexed_file(collection, file_hash)
         if existing:
-            payload = {
-                "new": 0,
-                "skipped": existing.indexed_chunks,
-                "collection": collection,
-                "book_id": existing.book_id,
-                "version": existing.version,
-                "file_hash": existing.file_hash,
-                "indexed_chunks": existing.indexed_chunks,
-                "path": str(dest),
-            }
-            return payload
-        result = _index_path(
-            dest,
-            collection=collection,
-            file_hash=file_hash,
-            metadata=meta.as_dict(),
-        )
+            book_id = existing.book_id
+            version = existing.version
+            stored_path = _store_uploaded_file(tmp_path, owner_id, book_id, filename.name)
+            _update_indexed_path(collection, file_hash, stored_path)
+        else:
+            result = _index_path(
+                tmp_path,
+                collection=collection,
+                file_hash=file_hash,
+                metadata=meta.as_dict(),
+            )
+            book_id = result.book_id
+            version = result.version
+            file_hash = result.file_hash
+            stored_path = _store_uploaded_file(tmp_path, owner_id, book_id, filename.name)
+            _update_indexed_path(collection, file_hash, stored_path)
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    payload = _serialize_index_result(result)
-    payload["path"] = str(dest)
-    return payload
+    finally:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+
+    return {"book_id": book_id, "version": version, "file_hash": file_hash}
+
+
+@_get("/book/{book_id}/page/{page}/view")
+def book_page_view(
+    book_id: str,
+    page: int,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    try:
+        page_num = int(page)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid page number") from exc
+    if page_num < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid page number")
+    owner_id = str(current_user.get("id") or "")
+    if not owner_id:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
+    file_path = _resolve_book_file(owner_id, book_id)
+    if file_path is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Book not found")
+    url, expires_at = _build_signed_view(owner_id, book_id, file_path.name, page_num)
+    return {"url": url, "expires_at": expires_at}
+
+
+@_get("/static/books/{token}")
+def serve_book_asset(token: str) -> Response:
+    payload = _decode_view_token(token)
+    try:
+        expires_at = int(payload.get("exp", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload") from exc
+    if expires_at < int(time.time()):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="URL expired")
+    owner_id = str(payload.get("owner_id") or "")
+    book_id = str(payload.get("book_id") or "")
+    filename = str(payload.get("filename") or "")
+    page = payload.get("page")
+    if not owner_id or not book_id or not filename:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload")
+    if not isinstance(page, int) or page < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload")
+    file_path = _ensure_upload_root() / owner_id / book_id / filename
+    if not file_path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File not found")
+    media_type, _ = mimetypes.guess_type(str(file_path))
+    headers = {
+        "Cache-Control": "private, max-age=0, no-store",
+        "content-type": media_type or "application/octet-stream",
+    }
+    if filename:
+        headers["content-disposition"] = f"inline; filename={filename}"
+    return Response(file_path.read_bytes(), headers=headers)
 
 
 @_get("/bookmarks")

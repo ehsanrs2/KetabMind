@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Dict, Iterable, Mapping, MutableMapping, Optional, get_type_hints
@@ -52,6 +53,10 @@ class Response:
     def text(self) -> str:
         return str(self._content)
 
+    @property
+    def content(self) -> Any:
+        return self._content
+
 
 class JSONResponse(Response):
     def __init__(self, content: Any, *, status_code: int = 200, headers: Optional[Mapping[str, str]] = None) -> None:
@@ -83,13 +88,22 @@ class State:
 
 
 class Request:
-    def __init__(self, method: str, url: URL, headers: Mapping[str, str] | None = None, query_params: Mapping[str, Any] | None = None, form: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        method: str,
+        url: URL,
+        headers: Mapping[str, str] | None = None,
+        query_params: Mapping[str, Any] | None = None,
+        form: Mapping[str, Any] | None = None,
+        path_params: Mapping[str, Any] | None = None,
+    ) -> None:
         self.method = method
         self.url = url
         self.headers = {k.lower(): v for k, v in (headers or {}).items()}
         self.query_params = dict(query_params or {})
         self.form = dict(form or {})
         self.state = State()
+        self.path_params = dict(path_params or {})
 
     def header(self, name: str, default: Any = None) -> Any:
         return self.headers.get(name.lower(), default)
@@ -134,6 +148,7 @@ class FastAPI:
     def __init__(self, *, title: str | None = None) -> None:
         self.title = title or "FastAPI"
         self._routes: Dict[tuple[str, str], Callable[..., Any]] = {}
+        self._route_patterns: list[tuple[str, re.Pattern[str], Callable[..., Any]]] = []
         self._middleware: list[Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]] = []
 
     def add_middleware(self, middleware_class: type[Any], **options: Any) -> None:
@@ -158,7 +173,11 @@ class FastAPI:
         return decorator
 
     def _add_route(self, method: str, path: str, endpoint: Callable[..., Any]) -> Callable[..., Any]:
-        self._routes[(method.upper(), path)] = endpoint
+        if "{" in path and "}" in path:
+            pattern = "^" + re.sub(r"{([a-zA-Z_][a-zA-Z0-9_]*)}", r"(?P<\1>[^/]+)", path) + "$"
+            self._route_patterns.append((method.upper(), re.compile(pattern), endpoint))
+        else:
+            self._routes[(method.upper(), path)] = endpoint
         return endpoint
 
     def get(self, path: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -185,10 +204,27 @@ class FastAPI:
         form_data: Mapping[str, Any] | None = None,
     ) -> Response:
         key = (method.upper(), path)
-        if key not in self._routes:
+        endpoint = self._routes.get(key)
+        path_params: Dict[str, Any] = {}
+        if endpoint is None:
+            for method_name, pattern, handler in self._route_patterns:
+                if method_name != method.upper():
+                    continue
+                match = pattern.match(path)
+                if match:
+                    endpoint = handler
+                    path_params = match.groupdict()
+                    break
+        if endpoint is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-        endpoint = self._routes[key]
-        request = Request(method.upper(), URL(path), headers=headers, query_params=query_params, form=form_data)
+        request = Request(
+            method.upper(),
+            URL(path),
+            headers=headers,
+            query_params=query_params,
+            form=form_data,
+            path_params=path_params,
+        )
 
         async def run_endpoint(req: Request) -> Response:
             try:
@@ -240,6 +276,8 @@ async def _invoke(
             kwargs[name] = query_params.get(name, default.default)
         elif annotation is Request or annotation == Request:
             kwargs[name] = request
+        elif hasattr(request, "path_params") and name in request.path_params:
+            kwargs[name] = request.path_params[name]
         elif body and name in body:
             value = body[name]
             if hasattr(annotation, "model_validate"):

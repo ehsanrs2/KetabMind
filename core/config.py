@@ -153,6 +153,9 @@ class Settings(BaseSettingsProto):
     rate_limit_qps: float | None = None
     cors_allow_origins: list[str] = ["*"]
 
+    upload_dir: str = "./data/uploads"
+    upload_signed_url_ttl: int = 300
+
 
     database_url: str = "sqlite:///./data/app.db"
 

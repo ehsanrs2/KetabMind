@@ -11,6 +11,7 @@ class Metadata(BaseModel):
     author: str | None = Field(default=None, description="Book author")
     year: int | str | None = Field(default=None, description="Publication year")
     subject: str | None = Field(default=None, description="Book subject or category")
+    title: str | None = Field(default=None, description="Book title")
 
     def as_dict(self) -> dict[str, Any]:
         """Return a cleaned dictionary without empty values."""
@@ -25,9 +26,15 @@ class IndexRequest(BaseModel):
     author: str | None = None
     year: int | str | None = None
     subject: str | None = None
+    title: str | None = None
 
     def metadata(self) -> dict[str, Any]:
         """Return metadata payload cleaned of empty values."""
 
-        meta = Metadata(author=self.author, year=self.year, subject=self.subject)
+        meta = Metadata(
+            author=self.author,
+            year=self.year,
+            subject=self.subject,
+            title=self.title,
+        )
         return meta.as_dict()

@@ -304,3 +304,15 @@ def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
         file_hash=file_hash,
         indexed_chunks=indexed_chunks,
     )
+
+
+def update_indexed_file_path(collection: str, file_hash: str, path: Path) -> None:
+    """Update the stored filesystem path for an indexed file."""
+
+    manifest = _load_manifest()
+    key = _manifest_key(collection, file_hash)
+    entry = manifest.get(key)
+    if not entry:
+        return
+    entry["path"] = str(path)
+    _save_manifest(manifest)
