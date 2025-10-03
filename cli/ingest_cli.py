@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import click
 
@@ -24,7 +25,9 @@ def _load_metadata(value: str | None) -> Mapping[str, Any] | None:
         try:
             data = json.loads(value)
         except json.JSONDecodeError as exc:
-            raise click.BadParameter("--with-meta expects a JSON object or path to JSON file") from exc
+            raise click.BadParameter(
+                "--with-meta expects a JSON object or path to JSON file"
+            ) from exc
 
     if not isinstance(data, Mapping):
         raise click.BadParameter("Metadata must decode to a JSON object")
@@ -33,7 +36,9 @@ def _load_metadata(value: str | None) -> Mapping[str, Any] | None:
 
 @click.command(help="Process an input document and write normalised JSONL records.")
 @click.argument("input_path", type=click.Path(path_type=Path, exists=True, readable=True))
-@click.option("--output", "-o", required=True, type=click.Path(path_type=Path), help="Destination JSONL path")
+@click.option(
+    "--output", "-o", required=True, type=click.Path(path_type=Path), help="Destination JSONL path"
+)
 @click.option(
     "--with-meta",
     "with_meta",

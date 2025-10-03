@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import structlog
 from structlog.contextvars import bind_contextvars, clear_contextvars
@@ -40,7 +41,7 @@ class RequestIDMiddleware:
         request_id = headers.get(self.header_name.lower()) or str(uuid.uuid4())
         state = getattr(request, "state", None)
         if state is not None:
-            setattr(state, "request_id", request_id)
+            state.request_id = request_id
 
         bind_contextvars(
             request_id=request_id,
@@ -69,16 +70,14 @@ class RequestIDMiddleware:
         finally:
             clear_contextvars()
 
-    async def _asgi_call(
-        self, scope: dict[str, Any], receive: ASGIReceive, send: ASGISend
-    ) -> None:
+    async def _asgi_call(self, scope: dict[str, Any], receive: ASGIReceive, send: ASGISend) -> None:
         headers_list = scope.get("headers", [])
         request_id = self._find_header(headers_list) or str(uuid.uuid4())
         state = scope.get("state")
         if state is None:
             state = scope["state"] = {}
         if hasattr(state, "__dict__"):
-            setattr(state, "request_id", request_id)
+            state.request_id = request_id
         else:
             try:
                 state["request_id"] = request_id  # type: ignore[index]
@@ -104,7 +103,9 @@ class RequestIDMiddleware:
                 status_code = int(message.get("status", 500))
                 headers = message.setdefault("headers", [])
                 if not self._header_present(headers):
-                    headers.append((self.header_name.encode("latin-1"), request_id.encode("latin-1")))
+                    headers.append(
+                        (self.header_name.encode("latin-1"), request_id.encode("latin-1"))
+                    )
                 bind_contextvars(status=status_code)
             elif message["type"] == "http.response.body" and not message.get("more_body", False):
                 if status_code is None:

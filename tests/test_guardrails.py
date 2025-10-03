@@ -20,7 +20,9 @@ from answering.guardrails import refusal_message, should_refuse
         (0.7, 0.4, "coverage<0.5,confidence<0.3", False),
     ],
 )
-def test_should_refuse_thresholds(coverage: float, confidence: float, rule: str, expected: bool) -> None:
+def test_should_refuse_thresholds(
+    coverage: float, confidence: float, rule: str, expected: bool
+) -> None:
     assert should_refuse(coverage, confidence, rule) is expected
 
 

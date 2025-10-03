@@ -11,7 +11,6 @@ from qdrant_client.http import models as rest
 
 from ..config import settings
 
-
 log = structlog.get_logger(__name__)
 
 

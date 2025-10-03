@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from functools import lru_cache
-import re
 
 from core.retrieve.retriever import ScoredChunk
 

@@ -3,17 +3,18 @@ from __future__ import annotations
 import importlib
 import sys
 import types
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pytest
-
 
 # Provide lightweight stubs for optional runtime dependencies before importing the module under test.
 typer_module = types.ModuleType("typer")
 
 
-def _typer_option(default: object = None, *args: object, **kwargs: object) -> object:  # pragma: no cover - stub
+def _typer_option(
+    default: object = None, *args: object, **kwargs: object
+) -> object:  # pragma: no cover - stub
     return default
 
 
@@ -98,7 +99,9 @@ def test_textual_pdf_skips_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OCR_FA", "true")
 
     ocr_calls: list[object] = []
-    monkeypatch.setattr(pdf_reader, "image_to_text", lambda image: ocr_calls.append(image) or "ignored")
+    monkeypatch.setattr(
+        pdf_reader, "image_to_text", lambda image: ocr_calls.append(image) or "ignored"
+    )
 
     result = pdf_reader.read_pdf(Path("textual.pdf"))
 
@@ -123,7 +126,9 @@ def test_scanned_pdf_uses_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OCR_FA", "true")
 
     images: list[str] = []
-    monkeypatch.setattr(pdf_reader, "_pixmap_to_image", lambda pix: images.append(pix.marker) or pix.marker)
+    monkeypatch.setattr(
+        pdf_reader, "_pixmap_to_image", lambda pix: images.append(pix.marker) or pix.marker
+    )
 
     ocr_texts = {"p1": "page one", "p2": "page two"}
 
@@ -137,4 +142,3 @@ def test_scanned_pdf_uses_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [page.text for page in result] == ["page one", "page two"]
     assert images == ["p1", "p2"]
     assert doc.closed is True
-

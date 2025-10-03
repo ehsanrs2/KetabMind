@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import re
+
 import pytest
 
 from embedding.adapter import EmbeddingAdapter
 
 
 def _dot(left: list[float], right: list[float]) -> float:
-    return sum(l * r for l, r in zip(left, right))
+    return sum(l * r for l, r in zip(left, right, strict=False))
 
 
 def _tokenize(text: str) -> set[str]:
@@ -30,7 +31,7 @@ def test_mock_embedding_retrieval_multilingual(monkeypatch: pytest.MonkeyPatch) 
         query_vector = adapter.embed_texts([query])[0]
         query_tokens = _tokenize(query)
         scores: dict[str, float] = {}
-        for chunk, vector, tokens in zip(chunks, chunk_vectors, chunk_tokens):
+        for chunk, vector, tokens in zip(chunks, chunk_vectors, chunk_tokens, strict=False):
             similarity = _dot(vector, query_vector)
             if query_tokens and tokens:
                 common = len(query_tokens & tokens)

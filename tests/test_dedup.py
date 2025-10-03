@@ -2,13 +2,13 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from qdrant_client.http import models as rest
 
 import core.vector.qdrant as qdrant
 from core.chunk.sliding import chunk_text
 from core.embed.mock import MockEmbedder
 from core.ingest.pdf import extract_pages
 from core.vector.qdrant import ChunkPayload, VectorStore
+from qdrant_client.http import models as rest
 
 
 def index_pdf(path: Path, store: VectorStore) -> tuple[int, int]:

@@ -5,13 +5,15 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, MutableMapping, Protocol, Sequence, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core.self_rag.validator import citation_coverage
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from core.retrieve.retriever import Retriever as _RetrieverType, ScoredChunk as _ScoredChunk
+    from core.retrieve.retriever import Retriever as _RetrieverType
+    from core.retrieve.retriever import ScoredChunk as _ScoredChunk
 else:  # pragma: no cover - fallback for optional dependency loading
     _RetrieverType = Any
     _ScoredChunk = Any
@@ -25,15 +27,13 @@ class RetrieverLike(Protocol):
     top_m: int
     hybrid_weights: MutableMapping[str, float]
 
-    def retrieve(self, query: str, top_n: int | None = None) -> list[ScoredChunk]:
-        ...
+    def retrieve(self, query: str, top_n: int | None = None) -> list[ScoredChunk]: ...
 
 
 class Synthesizer(Protocol):
     """Callable that turns a query and contexts into an answer."""
 
-    def __call__(self, query: str, contexts: Sequence[ScoredChunk]) -> str:
-        ...
+    def __call__(self, query: str, contexts: Sequence[ScoredChunk]) -> str: ...
 
 
 @dataclass(slots=True)
@@ -79,7 +79,9 @@ def _extract_keywords(contexts: Sequence[ScoredChunk], *, limit: int = 3) -> lis
     return keywords
 
 
-def _reformulate_query(original: str, contexts: Sequence[ScoredChunk], *, keyword_limit: int) -> str:
+def _reformulate_query(
+    original: str, contexts: Sequence[ScoredChunk], *, keyword_limit: int
+) -> str:
     keywords = _extract_keywords(contexts, limit=keyword_limit)
     if keywords:
         extra = " ".join(keywords)
@@ -88,7 +90,9 @@ def _reformulate_query(original: str, contexts: Sequence[ScoredChunk], *, keywor
     return f"{original} more details"
 
 
-def _tweak_hybrid_weights(weights: MutableMapping[str, float], delta: float) -> MutableMapping[str, float]:
+def _tweak_hybrid_weights(
+    weights: MutableMapping[str, float], delta: float
+) -> MutableMapping[str, float]:
     updated: MutableMapping[str, float] = {k: float(v) for k, v in weights.items()}
     if delta == 0:
         return updated

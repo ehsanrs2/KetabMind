@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from core.vector.qdrant_client import VectorStore
+from fastapi.testclient import TestClient
 
 
 @pytest.mark.integration

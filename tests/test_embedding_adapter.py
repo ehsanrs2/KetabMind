@@ -23,7 +23,14 @@ def test_embed_texts_with_sentence_transformer(monkeypatch):
             self.model_name = model_name
             self.device = device
 
-        def encode(self, texts, batch_size=None, convert_to_numpy=True, device=None, show_progress_bar=False):
+        def encode(
+            self,
+            texts,
+            batch_size=None,
+            convert_to_numpy=True,
+            device=None,
+            show_progress_bar=False,
+        ):
             dim = 4
             return torch.ones((len(texts), dim)).numpy()
 

@@ -7,12 +7,12 @@ import hashlib
 import hmac
 import json
 import time
+from collections.abc import Mapping, MutableMapping
 from datetime import timedelta
-from typing import Any, Dict, Mapping, MutableMapping, TypedDict
-
-from fastapi import HTTPException, Request, status
+from typing import Any, TypedDict
 
 from core.config import settings
+from fastapi import HTTPException, Request, status
 
 
 class _UserRecord(TypedDict):
@@ -28,7 +28,7 @@ def _hash_password(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-_USERS: Dict[str, _UserRecord] = {
+_USERS: dict[str, _UserRecord] = {
     "alice@example.com": {
         "id": "user-alice",
         "email": "alice@example.com",
@@ -56,7 +56,7 @@ _USERS: Dict[str, _UserRecord] = {
     },
 }
 
-_USERS_BY_ID: Dict[str, _UserRecord] = {record["id"]: record for record in _USERS.values()}
+_USERS_BY_ID: dict[str, _UserRecord] = {record["id"]: record for record in _USERS.values()}
 _DEFAULT_USER_ID = next(iter(_USERS_BY_ID))
 
 
@@ -99,19 +99,25 @@ def _get_user_record_by_id(user_id: str) -> _UserRecord:
 
 def authenticate_user(email: str, password: str) -> _UserRecord:
     record = _USERS.get(email.lower())
-    if record is None or not hmac.compare_digest(record["hashed_password"], _hash_password(password)):
+    if record is None or not hmac.compare_digest(
+        record["hashed_password"], _hash_password(password)
+    ):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
     return record
 
 
-def create_access_token(data: Mapping[str, Any], expires_delta: timedelta | int | None = None) -> str:
+def create_access_token(
+    data: Mapping[str, Any], expires_delta: timedelta | int | None = None
+) -> str:
     expires_seconds: int | None
     if isinstance(expires_delta, timedelta):
         expires_seconds = int(expires_delta.total_seconds())
     else:
-        expires_seconds = int(expires_delta) if expires_delta is not None else settings.jwt_expiration_seconds
+        expires_seconds = (
+            int(expires_delta) if expires_delta is not None else settings.jwt_expiration_seconds
+        )
     now = int(time.time())
-    payload: Dict[str, Any] = dict(data)
+    payload: dict[str, Any] = dict(data)
     payload.setdefault("iat", now)
     if expires_seconds is not None:
         payload["exp"] = now + expires_seconds
@@ -180,7 +186,7 @@ def get_current_user(request: Request) -> dict[str, Any]:
 
 
 def _parse_cookies(header: str) -> MutableMapping[str, str]:
-    cookies: Dict[str, str] = {}
+    cookies: dict[str, str] = {}
     if not header:
         return cookies
     parts = [part.strip() for part in header.split(";") if part.strip()]

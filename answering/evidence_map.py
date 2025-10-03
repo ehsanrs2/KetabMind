@@ -5,11 +5,10 @@ from __future__ import annotations
 import math
 import os
 import re
+from collections.abc import Iterable
 from functools import lru_cache
-from typing import Iterable
 
 from embedding.adapter import EmbeddingAdapter
-
 
 _STOPWORDS = {
     # English stopwords (small curated subset)
@@ -99,6 +98,7 @@ _STOPWORDS = {
     "و",
 }
 
+
 def split_sentences(text: str, lang: str) -> list[str]:
     """Very small helper that splits ``text`` into sentences.
 
@@ -152,7 +152,7 @@ def align_sentences_to_contexts(sentences: list[str], contexts: list[dict]) -> d
 
     sentence_embeddings = {
         idx: _normalise_vector(vector)
-        for idx, vector in zip(sentence_indices, sentence_vectors)
+        for idx, vector in zip(sentence_indices, sentence_vectors, strict=False)
     }
 
     prepared_contexts: list[dict] = []
@@ -191,7 +191,7 @@ def align_sentences_to_contexts(sentences: list[str], contexts: list[dict]) -> d
 
     if to_embed_texts:
         embedded = adapter.embed_texts(to_embed_texts)
-        for idx, vector in zip(to_embed_indices, embedded):
+        for idx, vector in zip(to_embed_indices, embedded, strict=False):
             prepared_contexts[idx]["embedding"] = _normalise_vector(vector)
 
     for sent_idx, sentence in cleaned_sentences.items():
@@ -266,7 +266,7 @@ def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
         return 0.0
     if len(vec_a) != len(vec_b):
         return 0.0
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    dot = sum(a * b for a, b in zip(vec_a, vec_b, strict=False))
     return max(min(dot, 1.0), -1.0)
 
 
@@ -292,4 +292,3 @@ __all__ = [
     "compute_coverage",
     "split_sentences",
 ]
-

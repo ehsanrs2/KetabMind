@@ -1,10 +1,12 @@
+# fastapi/__init__.py
 from __future__ import annotations
 
-import asyncio
 import inspect
+import re
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Awaitable, Callable, Dict, Iterable, Mapping, MutableMapping, Optional, get_type_hints
+from typing import Annotated, Any, cast, get_args, get_origin, get_type_hints
 
 __all__ = [
     "FastAPI",
@@ -41,10 +43,16 @@ status = SimpleNamespace(
 
 
 class Response:
-    def __init__(self, content: Any, *, status_code: int = 200, headers: Optional[Mapping[str, str]] = None) -> None:
+    def __init__(
+        self,
+        content: Any,
+        *,
+        status_code: int = 200,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
         self.status_code = status_code
-        self._content = content
-        self.headers: Dict[str, str] = dict(headers or {})
+        self._content: Any = content
+        self.headers: dict[str, str] = dict(headers or {})
 
     def json(self) -> Any:
         return self._content
@@ -52,14 +60,31 @@ class Response:
     def text(self) -> str:
         return str(self._content)
 
+    @property
+    def content(self) -> Any:
+        return self._content
+
 
 class JSONResponse(Response):
-    def __init__(self, content: Any, *, status_code: int = 200, headers: Optional[Mapping[str, str]] = None) -> None:
+    def __init__(
+        self,
+        content: Any,
+        *,
+        status_code: int = 200,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(content, status_code=status_code, headers=headers)
 
 
 class StreamingResponse(Response):
-    def __init__(self, content: Iterable[str], *, status_code: int = 200, headers: Optional[Mapping[str, str]] = None, media_type: str | None = None) -> None:
+    def __init__(
+        self,
+        content: Iterable[str],
+        *,
+        status_code: int = 200,
+        headers: Mapping[str, str] | None = None,
+        media_type: str | None = None,
+    ) -> None:
         super().__init__(list(content), status_code=status_code, headers=headers)
         if media_type:
             self.headers.setdefault("content-type", media_type)
@@ -78,24 +103,37 @@ class URL:
 
 
 class State:
+    limiter: Any | None
+
     def __init__(self) -> None:
-        pass
+        self.limiter = None
 
 
 class Request:
-    def __init__(self, method: str, url: URL, headers: Mapping[str, str] | None = None, query_params: Mapping[str, Any] | None = None, form: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        method: str,
+        url: URL,
+        headers: Mapping[str, str] | None = None,
+        query_params: Mapping[str, Any] | None = None,
+        form: Mapping[str, Any] | None = None,
+        path_params: Mapping[str, Any] | None = None,
+    ) -> None:
         self.method = method
         self.url = url
         self.headers = {k.lower(): v for k, v in (headers or {}).items()}
         self.query_params = dict(query_params or {})
         self.form = dict(form or {})
         self.state = State()
+        self.path_params = dict(path_params or {})
 
     def header(self, name: str, default: Any = None) -> Any:
         return self.headers.get(name.lower(), default)
 
 
 class UploadFile:
+    """Lightweight UploadFile compatible with the test client."""
+
     def __init__(self, filename: str, data: bytes, content_type: str | None = None) -> None:
         self.filename = filename
         self._data = data
@@ -105,6 +143,7 @@ class UploadFile:
         return self._data
 
 
+# --- Parameter marker classes (Query/Form/File/Depends) ---------------------
 class _Param:
     def __init__(self, default: Any = None) -> None:
         self.default = default
@@ -130,20 +169,42 @@ class Query(_Param):
     pass
 
 
+# --- Helpers to parse Annotated[...] metadata --------------------------------
+def _first_marker_from_annotation(annotation: Any) -> _Param | None:
+    """Extract first supported marker (Query/Form/File/Depends) from an Annotated type."""
+    if get_origin(annotation) is Annotated:
+        # Annotated[T, meta1, meta2, ...]
+        _, *meta = get_args(annotation)
+        for m in meta:
+            if isinstance(m, (Query, Form, File, Depends)):
+                return m
+    return None
+
+
+def _is_request_type(annotation: Any) -> bool:
+    return annotation is Request or annotation == Request
+
+
 class FastAPI:
     def __init__(self, *, title: str | None = None) -> None:
         self.title = title or "FastAPI"
-        self._routes: Dict[tuple[str, str], Callable[..., Any]] = {}
-        self._middleware: list[Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]] = []
+        self._routes: dict[tuple[str, str], Callable[..., Any]] = {}
+        self._route_patterns: list[tuple[str, re.Pattern[str], Callable[..., Any]]] = []
+        self._middleware: list[
+            Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]
+        ] = []
+        self.state = State()
 
     def add_middleware(self, middleware_class: type[Any], **options: Any) -> None:
         middleware = middleware_class(self, **options)
 
-        async def wrapper(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        async def wrapper(
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
             result = middleware(request, call_next)
             if inspect.isawaitable(result):
-                return await result  # type: ignore[return-value]
-            return result  # type: ignore[return-value]
+                return cast(Response, await result)
+            return cast(Response, result)
 
         self._middleware.append(wrapper)
 
@@ -151,14 +212,32 @@ class FastAPI:
         if typ != "http":
             raise ValueError("Only 'http' middleware supported in lightweight FastAPI stub")
 
-        def decorator(func: Callable[[Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]]) -> Callable[..., Any]:
+        def decorator(
+            func: Callable[
+                [Request, Callable[[Request], Awaitable[Response]]], Awaitable[Response]
+            ],
+        ) -> Callable[..., Any]:
             self._middleware.append(func)
             return func
 
         return decorator
 
-    def _add_route(self, method: str, path: str, endpoint: Callable[..., Any]) -> Callable[..., Any]:
-        self._routes[(method.upper(), path)] = endpoint
+    def _add_route(
+        self, method: str, path: str, endpoint: Callable[..., Any]
+    ) -> Callable[..., Any]:
+        if "{" in path and "}" in path:
+            pattern = (
+                "^"
+                + re.sub(
+                    r"{([a-zA-Z_][a-zA-Z0-9_]*)}",
+                    r"(?P<\1>[^/]+)",
+                    path,
+                )
+                + "$"
+            )
+            self._route_patterns.append((method.upper(), re.compile(pattern), endpoint))
+        else:
+            self._routes[(method.upper(), path)] = endpoint
         return endpoint
 
     def get(self, path: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -185,14 +264,38 @@ class FastAPI:
         form_data: Mapping[str, Any] | None = None,
     ) -> Response:
         key = (method.upper(), path)
-        if key not in self._routes:
+        endpoint = self._routes.get(key)
+        path_params: dict[str, Any] = {}
+        if endpoint is None:
+            for method_name, pattern, handler in self._route_patterns:
+                if method_name != method.upper():
+                    continue
+                match = pattern.match(path)
+                if match:
+                    endpoint = handler
+                    path_params = match.groupdict()
+                    break
+        if endpoint is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-        endpoint = self._routes[key]
-        request = Request(method.upper(), URL(path), headers=headers, query_params=query_params, form=form_data)
+        request = Request(
+            method.upper(),
+            URL(path),
+            headers=headers,
+            query_params=query_params,
+            form=form_data,
+            path_params=path_params,
+        )
 
         async def run_endpoint(req: Request) -> Response:
             try:
-                result = await _invoke(endpoint, req, body, files, query_params or {}, form_data or {})
+                result = await _invoke(
+                    endpoint,
+                    req,
+                    body,
+                    files,
+                    query_params or {},
+                    form_data or {},
+                )
             except HTTPException:
                 raise
             return _to_response(result)
@@ -201,7 +304,10 @@ class FastAPI:
             if index >= len(self._middleware):
                 return await run_endpoint(req)
             middleware = self._middleware[index]
-            return await middleware(req, lambda r: call_stack(index + 1, r))
+            return await middleware(
+                req,
+                lambda r: call_stack(index + 1, r),
+            )
 
         try:
             return await call_stack(0, request)
@@ -217,42 +323,99 @@ async def _invoke(
     query_params: Mapping[str, Any],
     form_data: Mapping[str, Any],
 ) -> Any:
+    """Call endpoint, filling parameters from Request / body / files based on markers."""
     signature = inspect.signature(func)
     annotations = get_type_hints(func, include_extras=True)
-    kwargs: Dict[str, Any] = {}
+    kwargs: dict[str, Any] = {}
+
     for name, param in signature.parameters.items():
         default = param.default
         annotation = annotations.get(name, param.annotation)
-        if isinstance(default, Depends):
-            dependency = default.dependency
-            dep_result = await _invoke(dependency, request, body, files, query_params, form_data)
+
+        # 1) Prefer Annotated[...] markers if present
+        marker = _first_marker_from_annotation(annotation)
+
+        if isinstance(marker, Depends):
+            dep = marker.dependency
+            dep_result = await _invoke(dep, request, body, files, query_params, form_data)
             kwargs[name] = dep_result
-        elif isinstance(default, File):
+            continue
+
+        if isinstance(marker, File):
+            if files and name in files:
+                kwargs[name] = files[name]
+            elif marker.required:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    f"Missing file parameter: {name}",
+                )
+            else:
+                kwargs[name] = marker.default
+            continue
+
+        if isinstance(marker, Form):
+            kwargs[name] = form_data.get(name, marker.default)
+            continue
+
+        if isinstance(marker, Query):
+            kwargs[name] = query_params.get(name, marker.default)
+            continue
+
+        # 2) Legacy path: marker in default value (non-Annotated)
+        if isinstance(default, Depends):
+            dep_result = await _invoke(
+                default.dependency, request, body, files, query_params, form_data
+            )
+            kwargs[name] = dep_result
+            continue
+
+        if isinstance(default, File):
             if files and name in files:
                 kwargs[name] = files[name]
             elif default.required:
-                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Missing file parameter: {name}")
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    f"Missing file parameter: {name}",
+                )
             else:
                 kwargs[name] = default.default
-        elif isinstance(default, Form):
+            continue
+
+        if isinstance(default, Form):
             kwargs[name] = form_data.get(name, default.default)
-        elif isinstance(default, Query):
+            continue
+
+        if isinstance(default, Query):
             kwargs[name] = query_params.get(name, default.default)
-        elif annotation is Request or annotation == Request:
+            continue
+
+        # 3) Other common sources
+        if _is_request_type(annotation):
             kwargs[name] = request
-        elif body and name in body:
+            continue
+
+        if hasattr(request, "path_params") and name in request.path_params:
+            kwargs[name] = request.path_params[name]
+            continue
+
+        if body and name in body:
             value = body[name]
             if hasattr(annotation, "model_validate"):
                 kwargs[name] = annotation.model_validate(value)
             else:
                 kwargs[name] = value
-        elif body and hasattr(annotation, "model_validate"):
+            continue
+
+        if body and hasattr(annotation, "model_validate"):
             kwargs[name] = annotation.model_validate(body)
+            continue
+
+        # 4) Fallback to default or None
+        if default is inspect._empty:
+            kwargs[name] = None
         else:
-            if default is inspect._empty:
-                kwargs[name] = None
-            else:
-                kwargs[name] = default
+            kwargs[name] = default
+
     result = func(**kwargs)
     if inspect.isawaitable(result):
         result = await result
@@ -264,7 +427,7 @@ def _to_response(result: Any) -> Response:
         return result
     if result is None:
         return Response(None, status_code=status.HTTP_200_OK)
-    if isinstance(result, (str, bytes)):
+    if isinstance(result, str | bytes):
         return Response(result, status_code=status.HTTP_200_OK)
     if isinstance(result, Mapping):
         return JSONResponse(dict(result))

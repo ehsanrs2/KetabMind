@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Dict, Iterable, Mapping, Sequence
+from typing import Any, Dict
 
 from .http import models as rest
 
@@ -20,7 +21,7 @@ class QdrantClient:
     def __init__(self, *, path: str | None = None, url: str | None = None) -> None:
         self.path = path
         self.url = url
-        self._collections: Dict[str, Dict[str, Any]] = {}
+        self._collections: dict[str, dict[str, Any]] = {}
 
     def recreate_collection(self, collection_name: str, vectors_config: rest.VectorParams) -> None:
         self._collections[collection_name] = {
@@ -40,7 +41,12 @@ class QdrantClient:
     def upsert(self, collection_name: str, points: Any) -> None:
         collection = self._collections.setdefault(
             collection_name,
-            {"config": rest.CollectionParams(vectors=rest.VectorParams(size=0, distance=rest.Distance.COSINE)), "points": {}},
+            {
+                "config": rest.CollectionParams(
+                    vectors=rest.VectorParams(size=0, distance=rest.Distance.COSINE)
+                ),
+                "points": {},
+            },
         )
         store = collection["points"]
         if isinstance(points, list):
@@ -70,7 +76,9 @@ class QdrantClient:
                 break
         return (matches, None)
 
-    def search(self, collection_name: str, query_vector: Sequence[float], limit: int) -> list[_Record]:
+    def search(
+        self, collection_name: str, query_vector: Sequence[float], limit: int
+    ) -> list[_Record]:
         collection = self._collections.get(collection_name)
         if not collection:
             return []

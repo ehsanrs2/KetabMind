@@ -7,10 +7,10 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
-from fastapi.testclient import TestClient
 
 from core.answer import answerer
 from core.answer.llm import LLMTimeoutError
+from fastapi.testclient import TestClient
 
 
 def _noop_index_path(*args: object, **kwargs: object) -> types.SimpleNamespace:

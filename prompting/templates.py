@@ -60,11 +60,7 @@ def _format_contexts(contexts: list[dict], citation_fmt: str) -> list[str]:
     lines: list[str] = []
     for idx, ctx in enumerate(contexts, 1):
         snippet = (
-            ctx.get("text")
-            or ctx.get("snippet")
-            or ctx.get("content")
-            or ctx.get("passage")
-            or ""
+            ctx.get("text") or ctx.get("snippet") or ctx.get("content") or ctx.get("passage") or ""
         )
         snippet = " ".join(str(snippet).split())
         metadata = {k: v for k, v in ctx.items() if isinstance(k, str)}
@@ -151,7 +147,11 @@ def bilingual_answer_template(
         answer_label = "Answer:"
 
     base_instructions.append(style_instruction)
-    base_instructions.append("پاسخ فقط باید بر اساس اطلاعات همین متون باشد." if selected_language == "fa" else "Answer only with information grounded in these passages.")
+    base_instructions.append(
+        "پاسخ فقط باید بر اساس اطلاعات همین متون باشد."
+        if selected_language == "fa"
+        else "Answer only with information grounded in these passages."
+    )
     base_instructions.extend(extra_guidance)
 
     instruction_lines = "\n".join(f"- {line}" for line in base_instructions)

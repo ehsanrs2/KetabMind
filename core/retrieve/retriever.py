@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Mapping, MutableMapping, Protocol, Sequence, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import structlog
-
 from caching import LRUCache
 from core.config import settings
 from core.embed import get_embedder
 from core.vector.qdrant import VectorStore
 from lexical import overlap_score
+
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from reranker import RerankerAdapter
 else:  # pragma: no cover - runtime placeholder
@@ -139,9 +140,7 @@ class Retriever:
         reranker_enabled: bool | None = None,
         reranker_cache_size: int | None = None,
     ) -> None:
-        if top_n is not None and top_k is not None:
-            self.top_n = int(top_n)
-        elif top_n is not None:
+        if top_n is not None and top_k is not None or top_n is not None:
             self.top_n = int(top_n)
         elif top_k is not None:
             self.top_n = int(top_k)
@@ -225,9 +224,7 @@ class Retriever:
         top_n: int | None = None,
         top_k: int | None = None,
     ) -> list[ScoredChunk]:
-        if top_n is not None and top_k is not None:
-            final_n = int(top_n)
-        elif top_n is not None:
+        if top_n is not None and top_k is not None or top_n is not None:
             final_n = int(top_n)
         elif top_k is not None:
             final_n = int(top_k)
@@ -271,9 +268,9 @@ class Retriever:
 
         reranker = self._get_reranker()
         if reranker and candidates:
-            rerank_candidates = sorted(
-                candidates, key=lambda c: c.lexical, reverse=True
-            )[: min(self.reranker_topk, len(candidates))]
+            rerank_candidates = sorted(candidates, key=lambda c: c.lexical, reverse=True)[
+                : min(self.reranker_topk, len(candidates))
+            ]
             cache = self._reranker_cache
             query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()
             pending_pairs: list[tuple[_Candidate, tuple[str, str], tuple[str, str]]] = []
@@ -303,7 +300,7 @@ class Retriever:
                             expected=len(pending_pairs),
                             received=len(scores),
                         )
-                    for (cand, cache_key, _), score in zip(pending_pairs, scores):
+                    for (cand, cache_key, _), score in zip(pending_pairs, scores, strict=False):
                         cand.reranker = float(score)
                         if cache:
                             cache.put(cache_key, cand.reranker)

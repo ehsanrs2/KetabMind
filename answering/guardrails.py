@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 _THRESHOLDS: dict[str, tuple[float, float]] = {
     "strict": (0.75, 0.6),

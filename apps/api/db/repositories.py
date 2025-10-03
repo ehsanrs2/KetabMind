@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ class _BaseRepository:
         self.session = session
         self.owner_id = owner_id
 
-    def _all(self, stmt) -> List[models.Base]:
+    def _all(self, stmt) -> list[models.Base]:
         return list(self.session.scalars(stmt))
 
     def _one(self, stmt) -> models.Base | None:
@@ -46,7 +46,7 @@ class UserRepository:
 class BookRepository(_BaseRepository):
     model = models.Book
 
-    def list(self) -> List[models.Book]:
+    def list(self) -> list[models.Book]:
         stmt = (
             select(models.Book)
             .where(models.Book.owner_id == self.owner_id)
@@ -70,7 +70,7 @@ class BookRepository(_BaseRepository):
 class BookVersionRepository(_BaseRepository):
     model = models.BookVersion
 
-    def list_for_book(self, book_id: int) -> List[models.BookVersion]:
+    def list_for_book(self, book_id: int) -> list[models.BookVersion]:
         stmt = (
             select(models.BookVersion)
             .where(
@@ -81,9 +81,7 @@ class BookVersionRepository(_BaseRepository):
         )
         return self._all(stmt)
 
-    def create(
-        self, *, book_id: int, version: str, notes: str | None = None
-    ) -> models.BookVersion:
+    def create(self, *, book_id: int, version: str, notes: str | None = None) -> models.BookVersion:
         book_repo = BookRepository(self.session, self.owner_id)
         book = book_repo.get(book_id)
         if book is None:
@@ -102,7 +100,7 @@ class BookVersionRepository(_BaseRepository):
 class SessionRepository(_BaseRepository):
     model = models.Session
 
-    def list(self) -> List[models.Session]:
+    def list(self) -> list[models.Session]:
         stmt = (
             select(models.Session)
             .where(models.Session.owner_id == self.owner_id)
@@ -117,9 +115,7 @@ class SessionRepository(_BaseRepository):
         )
         return self._one(stmt)
 
-    def create(
-        self, *, title: str, book_id: int | None = None
-    ) -> models.Session:
+    def create(self, *, title: str, book_id: int | None = None) -> models.Session:
         book_ref: models.Book | None = None
         if book_id is not None:
             book_ref = BookRepository(self.session, self.owner_id).get(book_id)
@@ -138,7 +134,7 @@ class SessionRepository(_BaseRepository):
 class BookmarkRepository(_BaseRepository):
     model = models.Bookmark
 
-    def list_for_book(self, book_id: int) -> List[models.Bookmark]:
+    def list_for_book(self, book_id: int) -> list[models.Bookmark]:
         stmt = (
             select(models.Bookmark)
             .where(
@@ -149,9 +145,7 @@ class BookmarkRepository(_BaseRepository):
         )
         return self._all(stmt)
 
-    def create(
-        self, *, book_id: int, page: int, note: str | None = None
-    ) -> models.Bookmark:
+    def create(self, *, book_id: int, page: int, note: str | None = None) -> models.Bookmark:
         book = BookRepository(self.session, self.owner_id).get(book_id)
         if book is None:
             raise ValueError("Book not found or not owned by this user")
@@ -169,7 +163,7 @@ class BookmarkRepository(_BaseRepository):
 class MessageRepository(_BaseRepository):
     model = models.Message
 
-    def list_for_session(self, session_id: int) -> List[models.Message]:
+    def list_for_session(self, session_id: int) -> list[models.Message]:
         stmt = (
             select(models.Message)
             .where(
@@ -180,9 +174,7 @@ class MessageRepository(_BaseRepository):
         )
         return self._all(stmt)
 
-    def create(
-        self, *, session_id: int, role: str, content: str
-    ) -> models.Message:
+    def create(self, *, session_id: int, role: str, content: str) -> models.Message:
         session_repo = SessionRepository(self.session, self.owner_id)
         session_obj = session_repo.get(session_id)
         if session_obj is None:

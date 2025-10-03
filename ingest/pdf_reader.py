@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import io
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import structlog
-
 from core.ingest.pdf_to_text import Page
 from ingest.ocr import image_to_text
 
@@ -30,7 +29,7 @@ def _is_ocr_enabled() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
-def _pixmap_to_image(pixmap: "fitz.Pixmap") -> "Image.Image":
+def _pixmap_to_image(pixmap: fitz.Pixmap) -> Image.Image:
     if Image is None:  # pragma: no cover - exercised only when Pillow missing at runtime
         raise RuntimeError("Pillow is required for OCR fallback")
     data = pixmap.tobytes("png")
@@ -41,8 +40,8 @@ def _pixmap_to_image(pixmap: "fitz.Pixmap") -> "Image.Image":
         image.load()
 
 
-def _extract_with_pymupdf(doc: "fitz.Document") -> list[tuple["fitz.Page", str]]:
-    extracted: list[tuple["fitz.Page", str]] = []
+def _extract_with_pymupdf(doc: fitz.Document) -> list[tuple[fitz.Page, str]]:
+    extracted: list[tuple[fitz.Page, str]] = []
     for page_index in range(doc.page_count):
         page = doc.load_page(page_index)
         text = (page.get_text() or "").strip()
@@ -79,10 +78,12 @@ def read_pdf(path: Path) -> list[Page]:
         else:
             log.debug("pdf_reader.pymupdf_success", path=str(path), ratio=ratio)
 
-        return [Page(page_num=index, text=text) for index, (_page, text) in enumerate(extracted, start=1)]
+        return [
+            Page(page_num=index, text=text)
+            for index, (_page, text) in enumerate(extracted, start=1)
+        ]
     finally:
         doc.close()
 
 
 __all__ = ["read_pdf"]
-

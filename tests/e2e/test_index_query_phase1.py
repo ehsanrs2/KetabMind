@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+
 def _make_pdf(path: Path, *, text: str) -> None:
     from reportlab.lib.pagesizes import letter  # type: ignore import-not-found
     from reportlab.pdfgen import canvas  # type: ignore import-not-found
@@ -40,11 +41,11 @@ def test_index_query_phase1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     config.reload_settings()
 
     # Reload modules that depend on configuration to ensure clean state.
-    import core.index.indexer as indexer
-    import core.vector.qdrant_client as ingest_store
-    import core.vector.qdrant as query_store
-    import core.answer.answerer as answerer
     import apps.api.main as api_main
+    import core.answer.answerer as answerer
+    import core.index.indexer as indexer
+    import core.vector.qdrant as query_store
+    import core.vector.qdrant_client as ingest_store
 
     importlib.reload(indexer)
     importlib.reload(ingest_store)

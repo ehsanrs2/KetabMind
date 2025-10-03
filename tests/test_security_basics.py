@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Callable
 from types import ModuleType
-from typing import Callable
 
 import pytest
+
 from fastapi.testclient import TestClient
 
 

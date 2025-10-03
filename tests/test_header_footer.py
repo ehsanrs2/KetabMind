@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import importlib.util
 import sys
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
 
 if "typer" not in sys.modules:
+
     class _TyperStub:
         def __init__(self, *args, **kwargs) -> None:  # pragma: no cover - simple shim
             pass
@@ -25,6 +26,7 @@ if "typer" not in sys.modules:
 
 
 if "pypdf" not in sys.modules:
+
     class _PdfReaderStub:  # pragma: no cover - simple shim
         def __init__(self, *args, **kwargs) -> None:
             raise RuntimeError("PdfReader stub should not be instantiated in tests")

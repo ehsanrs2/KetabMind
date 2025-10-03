@@ -1,4 +1,5 @@
 """Benchmark helper for embedding adapters."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,7 +7,6 @@ import logging
 import os
 import statistics
 import time
-from typing import List
 
 try:
     import psutil
@@ -71,12 +71,14 @@ def main() -> None:
 
     os.environ["EMBED_MODEL_NAME"] = args.model_name
 
-    texts: List[str] = [args.sample_text for _ in range(args.batch_size)]
+    texts: list[str] = [args.sample_text for _ in range(args.batch_size)]
 
     adapter = EmbeddingAdapter(batch_size=args.batch_size, device=args.device)
     device = adapter.device
 
-    logging.info("Benchmarking model=%s device=%s quant=%s", args.model_name, device, args.quantization)
+    logging.info(
+        "Benchmarking model=%s device=%s quant=%s", args.model_name, device, args.quantization
+    )
 
     if torch.cuda.is_available() and "cuda" in device:
         torch.cuda.empty_cache()
@@ -87,7 +89,7 @@ def main() -> None:
         if torch.cuda.is_available() and "cuda" in device:
             torch.cuda.synchronize()
 
-    latencies_ms: List[float] = []
+    latencies_ms: list[float] = []
     for _ in range(args.repeats):
         start = time.perf_counter()
         adapter.embed_texts(texts, batch_size=args.batch_size)

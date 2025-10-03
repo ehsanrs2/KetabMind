@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 import pytest
-from qdrant_client.http import models as rest
 
 import core.config as cfg
 import core.vector.qdrant as qdrant
+from qdrant_client.http import models as rest
 
 F = TypeVar("F", bound=Callable[..., Any])
 integration = cast(Callable[[F], F], pytest.mark.integration)

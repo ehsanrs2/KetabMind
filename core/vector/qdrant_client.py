@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import uuid
 import importlib
 import importlib.util
+import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
 
@@ -15,6 +15,7 @@ else:
         np = importlib.import_module("numpy")
         NDArray = importlib.import_module("numpy.typing").NDArray  # type: ignore[attr-defined]
     else:  # pragma: no cover - fallback when numpy missing
+
         class _NumpyFallback:
             floating = float
 
@@ -23,9 +24,10 @@ else:
         class NDArray(list):
             pass
 
+
+import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
-import structlog
 
 FloatArray: TypeAlias = NDArray[np.floating[Any]]
 
@@ -72,7 +74,7 @@ class VectorStore:
             raise ValueError(msg)
         self.ensure_collection()
 
-    def __enter__(self) -> "VectorStore":  # pragma: no cover - simple context helper
+    def __enter__(self) -> VectorStore:  # pragma: no cover - simple context helper
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:  # pragma: no cover - simple context helper

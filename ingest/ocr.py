@@ -32,4 +32,3 @@ def image_to_text(image: Any) -> str:
 
 
 __all__ = ["image_to_text"]
-

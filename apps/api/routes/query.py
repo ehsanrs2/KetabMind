@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from answering.citations import build_citations
 from answering.evidence_map import split_sentences
@@ -49,11 +50,11 @@ def _support_from_context(context: dict[str, Any]) -> dict[str, Any] | None:
     return support or None
 
 
-def _build_evidence_map(answer: str, contexts: list[dict[str, Any]], lang: str) -> list[dict[str, Any]]:
+def _build_evidence_map(
+    answer: str, contexts: list[dict[str, Any]], lang: str
+) -> list[dict[str, Any]]:
     sentences = split_sentences(answer, lang)
-    supports = [
-        entry for ctx in contexts if (entry := _support_from_context(ctx))
-    ]
+    supports = [entry for ctx in contexts if (entry := _support_from_context(ctx))]
     evidence: list[dict[str, Any]] = []
     for sentence in sentences:
         evidence.append({"sentence": sentence, "supports": list(supports)})

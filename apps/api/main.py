@@ -1,22 +1,23 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import gzip
+import hashlib
+import hmac
+import inspect
 import json
 import math
+import mimetypes
+import shutil
 import tempfile
 import time
-from collections.abc import Callable, Iterable
-from types import SimpleNamespace
+from collections.abc import Callable, Iterable, Mapping
+from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, TypeVar, cast
 
-import structlog
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
-from fastapi.middleware import RequestIDMiddleware
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
 from limits import RateLimitItemPerSecond
-from slowapi import Limiter
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     Counter,
@@ -24,8 +25,9 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
-from utils.pydantic_compat import BaseModel
+from slowapi import Limiter
 
+import structlog
 from apps.api.auth import (
     authenticate_user,
     create_access_token,
@@ -39,11 +41,15 @@ from apps.api.schemas import IndexRequest, Metadata
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
-from utils.logging import configure_logging
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.middleware import RequestIDMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from utils.hash import sha256_file
+from utils.logging import configure_logging
+from utils.pydantic_compat import BaseModel
 
 if TYPE_CHECKING:
-
     from core.index import IndexResult as IndexResultType
 
     class BaseModelProto:
@@ -59,16 +65,16 @@ log = structlog.get_logger(__name__)
 
 
 def _client_identifier(request: Request) -> str:
-    headers = getattr(request, "headers", {})
+    headers = cast(Mapping[str, str], getattr(request, "headers", {}))
     forwarded = headers.get("x-forwarded-for")
-    if forwarded:
+    if isinstance(forwarded, str):
         return forwarded.split(",", 1)[0].strip()
     real_ip = headers.get("x-real-ip")
-    if real_ip:
+    if isinstance(real_ip, str):
         return real_ip
     client = getattr(request, "client", None)
     host = getattr(client, "host", None) if client else None
-    if host:
+    if isinstance(host, str):
         return host
     return "127.0.0.1"
 
@@ -98,7 +104,7 @@ class _GZipMiddleware:
         response.headers.setdefault("content-encoding", "gzip")
         response.headers.setdefault("vary", "Accept-Encoding")
         response.headers["content-length"] = str(len(compressed))
-        response._content = compressed  # type: ignore[attr-defined]
+        response._content = compressed
         return response
 
 
@@ -117,8 +123,6 @@ limiter = Limiter(
     headers_enabled=True,
     enabled=limiter_enabled,
 )
-if not hasattr(app, "state"):
-    app.state = SimpleNamespace()
 app.state.limiter = limiter
 
 _GLOBAL_RATE_LIMIT: RateLimitItemPerSecond | None = None
@@ -179,12 +183,11 @@ def _rate_limit_response(retry_after: int) -> JSONResponse:
     return response
 
 
-def _enforce_limit(
-    limit: RateLimitItemPerSecond | None, request: Request
-) -> int | None:
+def _enforce_limit(limit: RateLimitItemPerSecond | None, request: Request) -> int | None:
     if not limiter.enabled or limit is None:
         return None
-    key = limiter._key_func(request) if hasattr(limiter, "_key_func") else _client_identifier(request)
+    key_func = getattr(limiter, "_key_func", None)
+    key = key_func(request) if callable(key_func) else _client_identifier(request)
     if limiter.limiter.test(limit, key):
         limiter.limiter.hit(limit, key)
         return None
@@ -202,7 +205,7 @@ def _post(path: str) -> Callable[[F], F]:
 
 
 @app.middleware("http")
-async def _metrics_middleware(request: Request, call_next: Callable[[Request], Any]):
+async def _metrics_middleware(request: Request, call_next: Callable[[Request], Any]) -> Response:
     path = request.url.path
     method = request.method
     start = time.perf_counter()
@@ -245,7 +248,6 @@ class LoginRequest(BaseModelProto):
     password: str
 
 
-
 def _find_indexed_file(*args: Any, **kwargs: Any) -> Any:
     from core.index import find_indexed_file as _find
 
@@ -256,6 +258,12 @@ def _index_path(*args: Any, **kwargs: Any) -> IndexResultType:
     from core.index import index_path as _index
 
     return _index(*args, **kwargs)
+
+
+def _update_indexed_path(*args: Any, **kwargs: Any) -> None:
+    from core.index import update_indexed_file_path as _update
+
+    _update(*args, **kwargs)
 
 
 def _llm_error_payload(exc: LLMError) -> tuple[int, dict[str, Any]]:
@@ -285,6 +293,108 @@ def _serialize_index_result(result: IndexResultType) -> dict[str, Any]:
         "file_hash": result.file_hash,
         "indexed_chunks": result.indexed_chunks,
     }
+
+
+def _ensure_upload_root() -> Path:
+    upload_dir = settings.upload_dir
+    if not upload_dir:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Upload directory not configured",
+        )
+    root = Path(upload_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+async def _write_upload_to_tempfile(file: UploadFile, filename: Path) -> Path:
+    suffix = filename.suffix if filename.suffix else ""
+    data = await file.read()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(data)
+    close = getattr(file, "close", None)
+    if close:
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+    return Path(tmp.name)
+
+
+def _store_uploaded_file(src: Path, owner_id: str, book_id: str, filename: str) -> Path:
+    root = _ensure_upload_root()
+    target_dir = root / owner_id / book_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = target_dir / filename
+    if dest_path.exists():
+        dest_path.unlink()
+    shutil.move(str(src), dest_path)
+    return dest_path
+
+
+def _resolve_book_file(owner_id: str, book_id: str) -> Path | None:
+    root = _ensure_upload_root()
+    book_dir = root / owner_id / book_id
+    if not book_dir.is_dir():
+        return None
+    files = sorted(p for p in book_dir.iterdir() if p.is_file())
+    if not files:
+        return None
+    return files[0]
+
+
+def _encode_view_token(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    signature = hmac.new(
+        settings.jwt_secret.encode("utf-8"),
+        raw,
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def _decode_view_token(token: str) -> dict[str, Any]:
+    try:
+        encoded, signature = token.rsplit(".", 1)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token format") from exc
+    padding = "=" * (-len(encoded) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(encoded + padding)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token encoding") from exc
+    expected = hmac.new(
+        settings.jwt_secret.encode("utf-8"),
+        raw,
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid token signature")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload")
+    return payload
+
+
+def _build_signed_view(owner_id: str, book_id: str, filename: str, page: int) -> tuple[str, int]:
+    ttl = int(settings.upload_signed_url_ttl or 0)
+    if ttl <= 0:
+        ttl = 300
+    now = int(time.time())
+    expires = now + ttl
+    token = _encode_view_token(
+        {
+            "owner_id": owner_id,
+            "book_id": book_id,
+            "filename": filename,
+            "page": page,
+            "exp": expires,
+        }
+    )
+    return f"/static/books/{token}", expires
 
 
 @_get("/health")
@@ -317,15 +427,16 @@ def login(req: LoginRequest) -> JSONResponse:
 def query(
     req: QueryRequest,
     request: Request,
-    stream: bool = Query(False),
-    debug: bool = Query(False),
-    _user: dict[str, Any] = Depends(get_current_user),
+    stream: Annotated[bool, Query(False)],
+    debug: Annotated[bool, Query(False)],
+    _user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> Any:
     retry_after = _enforce_limit(_QUERY_RATE_LIMIT, request)
     if retry_after is not None:
         return _rate_limit_response(retry_after)
     log.info("query.received", stream=stream, top_k=req.top_k, debug=debug)
     if stream:
+
         def gen() -> Iterable[str]:
             log.info("query.stream.start", top_k=req.top_k, debug=debug)
             try:
@@ -360,10 +471,8 @@ def query(
         if isinstance(meta, dict):
             token_usage = meta.get("token_usage")
             if token_usage is not None:
-                try:
+                with suppress(TypeError, ValueError):  # pragma: no cover - defensive
                     TOKEN_USAGE_GAUGE.set(float(token_usage))
-                except (TypeError, ValueError):  # pragma: no cover - defensive
-                    pass
         return payload
     except LLMError as exc:
         log.warning("query.llm_error", error=str(exc), exc_info=str(exc))
@@ -373,7 +482,7 @@ def query(
 @_post("/index")
 def index(
     req: IndexRequest,
-    _user: dict[str, Any] = Depends(get_current_user),
+    _user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, Any]:
     try:
         path = Path(req.path)
@@ -404,56 +513,111 @@ def index(
 
 
 def _upload_metadata(
-    author: str | None = Form(None),
-    year: str | None = Form(None),
-    subject: str | None = Form(None),
+    author: Annotated[str | None, Form(None)] = None,
+    year: Annotated[str | None, Form(None)] = None,
+    subject: Annotated[str | None, Form(None)] = None,
+    title: Annotated[str | None, Form(None)] = None,
 ) -> Metadata:
-    return Metadata(author=author, year=year, subject=subject)
+    return Metadata(author=author, year=year, subject=subject, title=title)
 
 
 @_post("/upload")
 async def upload(
-    file: UploadFile = File(...),  # noqa: B008
-    meta: Metadata = Depends(_upload_metadata),
-    _user: dict[str, Any] = Depends(get_current_user),
+    file: Annotated[UploadFile, File(...)],
+    meta: Annotated[Metadata, Depends(_upload_metadata)],
+    _user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, Any]:
-    tmp_dir = Path(tempfile.gettempdir())
     filename = Path(file.filename or "upload")
-    dest = tmp_dir / filename.name
-    dest.write_bytes(await file.read())
+    tmp_path = await _write_upload_to_tempfile(file, filename)
+    owner_id = str(_user.get("id") or "")
+    if not owner_id:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
     try:
         collection = settings.qdrant_collection
-        file_hash = sha256_file(dest)
+        file_hash = sha256_file(tmp_path)
         existing = _find_indexed_file(collection, file_hash)
         if existing:
-            payload = {
-                "new": 0,
-                "skipped": existing.indexed_chunks,
-                "collection": collection,
-                "book_id": existing.book_id,
-                "version": existing.version,
-                "file_hash": existing.file_hash,
-                "indexed_chunks": existing.indexed_chunks,
-                "path": str(dest),
-            }
-            return payload
-        result = _index_path(
-            dest,
-            collection=collection,
-            file_hash=file_hash,
-            metadata=meta.as_dict(),
-        )
+            book_id = existing.book_id
+            version = existing.version
+            stored_path = _store_uploaded_file(tmp_path, owner_id, book_id, filename.name)
+            _update_indexed_path(collection, file_hash, stored_path)
+        else:
+            result = _index_path(
+                tmp_path,
+                collection=collection,
+                file_hash=file_hash,
+                metadata=meta.as_dict(),
+            )
+            book_id = result.book_id
+            version = result.version
+            file_hash = result.file_hash
+            stored_path = _store_uploaded_file(tmp_path, owner_id, book_id, filename.name)
+            _update_indexed_path(collection, file_hash, stored_path)
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    payload = _serialize_index_result(result)
-    payload["path"] = str(dest)
-    return payload
+    finally:
+        with suppress(FileNotFoundError):
+            tmp_path.unlink()
+
+    return {"book_id": book_id, "version": version, "file_hash": file_hash}
+
+
+@_get("/book/{book_id}/page/{page}/view")
+def book_page_view(
+    book_id: str,
+    page: int,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    try:
+        page_num = int(page)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid page number") from exc
+    if page_num < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid page number")
+    owner_id = str(current_user.get("id") or "")
+    if not owner_id:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
+    file_path = _resolve_book_file(owner_id, book_id)
+    if file_path is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Book not found")
+    url, expires_at = _build_signed_view(owner_id, book_id, file_path.name, page_num)
+    return {"url": url, "expires_at": expires_at}
+
+
+@_get("/static/books/{token}")
+def serve_book_asset(token: str) -> Response:
+    payload = _decode_view_token(token)
+    try:
+        expires_at = int(payload.get("exp", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload") from exc
+    if expires_at < int(time.time()):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="URL expired")
+    owner_id = str(payload.get("owner_id") or "")
+    book_id = str(payload.get("book_id") or "")
+    filename = str(payload.get("filename") or "")
+    page = payload.get("page")
+    if not owner_id or not book_id or not filename:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload")
+    if not isinstance(page, int) or page < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token payload")
+    file_path = _ensure_upload_root() / owner_id / book_id / filename
+    if not file_path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File not found")
+    media_type, _ = mimetypes.guess_type(str(file_path))
+    headers = {
+        "Cache-Control": "private, max-age=0, no-store",
+        "content-type": media_type or "application/octet-stream",
+    }
+    if filename:
+        headers["content-disposition"] = f"inline; filename={filename}"
+    return Response(file_path.read_bytes(), headers=headers)
 
 
 @_get("/bookmarks")
 def bookmarks(
-    user_id: str | None = Query(None),
-    current_user: dict[str, Any] = Depends(get_current_user),
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+    user_id: Annotated[str | None, Query(None)] = None,
 ) -> dict[str, Any]:
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:
@@ -463,8 +627,8 @@ def bookmarks(
 
 @_get("/sessions")
 def sessions(
-    user_id: str | None = Query(None),
-    current_user: dict[str, Any] = Depends(get_current_user),
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+    user_id: Annotated[str | None, Query(None)] = None,
 ) -> dict[str, Any]:
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:
@@ -474,6 +638,5 @@ def sessions(
 
 @_get("/metrics")
 def metrics() -> Response:
-    return Response(generate_latest().decode("utf-8"), headers={"content-type": CONTENT_TYPE_LATEST})
-
-
+    payload = generate_latest().decode("utf-8")
+    return Response(payload, headers={"content-type": CONTENT_TYPE_LATEST})

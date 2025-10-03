@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import structlog
 from structlog.contextvars import merge_contextvars
@@ -18,7 +19,9 @@ def _log_level_from_env() -> int:
     return getattr(logging, level_name, logging.INFO)
 
 
-def _redaction_processor(redact_fields: set[str]) -> Callable[[Any, str, dict[str, Any]], dict[str, Any]]:
+def _redaction_processor(
+    redact_fields: set[str],
+) -> Callable[[Any, str, dict[str, Any]], dict[str, Any]]:
     lower_fields = {field.lower() for field in redact_fields}
 
     def processor(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:

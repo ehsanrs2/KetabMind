@@ -1,14 +1,14 @@
 """Utilities for running cross-encoder rerankers."""
+
 from __future__ import annotations
 
 import threading
-from typing import Iterable, List, Sequence, Tuple
+from collections.abc import Iterable, Sequence
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-
-Pair = Tuple[str, str]
+Pair = tuple[str, str]
 
 
 class RerankerAdapter:
@@ -35,12 +35,12 @@ class RerankerAdapter:
         self.model.to(self.device)
         self.model.eval()
 
-    def score_pairs(self, pairs: Sequence[Pair]) -> List[float]:
+    def score_pairs(self, pairs: Sequence[Pair]) -> list[float]:
         """Score (query, document) pairs with the cross-encoder."""
         if not pairs:
             return []
 
-        scores: List[float] = []
+        scores: list[float] = []
         for batch in _batched(pairs, self.batch_size):
             queries = [q for q, _ in batch]
             docs = [d for _, d in batch]
@@ -82,9 +82,7 @@ class RerankerAdapter:
         thread.start()
         finished = done.wait(self.timeout_s)
         if not finished:
-            raise TimeoutError(
-                f"Reranker inference exceeded timeout of {self.timeout_s} seconds"
-            )
+            raise TimeoutError(f"Reranker inference exceeded timeout of {self.timeout_s} seconds")
         thread.join()
 
         if "error" in exception:
@@ -92,7 +90,7 @@ class RerankerAdapter:
         return result["value"]
 
     @staticmethod
-    def _logits_to_scores(logits: torch.Tensor) -> List[float]:
+    def _logits_to_scores(logits: torch.Tensor) -> list[float]:
         if logits.numel() == 0:
             return []
         if logits.shape[-1] == 1:

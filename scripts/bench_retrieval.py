@@ -1,12 +1,12 @@
 """Benchmark retrieval latency with and without reranker cache."""
+
 from __future__ import annotations
 
+import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
-
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -31,7 +31,9 @@ class MockHit:
 
 
 class MockClient:
-    def search(self, collection_name: str, query_vector: Sequence[float], limit: int) -> list[MockHit]:
+    def search(
+        self, collection_name: str, query_vector: Sequence[float], limit: int
+    ) -> list[MockHit]:
         return [
             MockHit(
                 payload={

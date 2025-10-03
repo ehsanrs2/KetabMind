@@ -39,7 +39,7 @@ def test_format_citation_supports_page_range_placeholder() -> None:
                 {"book_id": "c", "page_start": 7, "page_end": 9},
                 {"book_id": "c", "page_start": 11, "page_end": 11},
             ],
-            ["[b:2-3]", "[c:7-9]", "[c:11]"]
+            ["[b:2-3]", "[c:7-9]", "[c:11]"],
         ),
     ],
 )

@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from answering.evidence_map import (
@@ -66,4 +64,3 @@ def test_align_and_compute_coverage_persian_example() -> None:
 
     assert coverage == pytest.approx(1.0, rel=1e-2)
     assert all(item["contexts"] for item in evidence_map.values())
-

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from collections.abc import Iterable as TypingIterable
 from pathlib import Path
-from typing import Iterable as TypingIterable, TypedDict
+from typing import TypedDict
 
 from pypdf import PdfReader
 
@@ -23,7 +24,7 @@ def _load_toc(reader: PdfReader) -> list[tuple[int, str]]:
     """Return a sorted list of (page_number, title) outlines."""
 
     try:
-        outlines: TypingIterable[object] = getattr(reader, "outline", getattr(reader, "outlines"))
+        outlines: TypingIterable[object] = getattr(reader, "outline", reader.outlines)
     except AttributeError:  # pragma: no cover - defensive for older pypdf
         outlines = []
 

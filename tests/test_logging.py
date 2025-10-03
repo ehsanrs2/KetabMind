@@ -4,11 +4,11 @@ import json
 import logging
 
 import pytest
+
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware import RequestIDMiddleware
 from fastapi.testclient import TestClient
-
 from utils.logging import configure_logging
 
 

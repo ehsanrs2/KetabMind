@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from core.config import Settings
 from core.retrieve.retriever import ScoredChunk
-
 from self_rag.advanced import AnswerResult, reformulate_query, second_pass
 
 

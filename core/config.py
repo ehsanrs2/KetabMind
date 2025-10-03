@@ -1,74 +1,71 @@
 from __future__ import annotations
 
-import importlib
-import importlib.util
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
+from typing import Any, cast, get_args, get_origin, get_type_hints
 
-if TYPE_CHECKING:
 
-    from pydantic_settings import BaseSettings as BaseSettingsProto
-    from pydantic_settings import SettingsConfigDict
+class _FallbackSettingsConfigDict(dict[str, Any]):
+    """Lightweight mapping compatible with pydantic's SettingsConfigDict."""
 
+    env_file: str | None
+
+    def __init__(self, env_file: str | None = None, **kwargs: Any) -> None:
+        super().__init__(env_file=env_file, **kwargs)
+        self.env_file = env_file
+
+
+class _FallbackBaseSettings:
+    """Fallback replacement for pydantic BaseSettings when unavailable."""
+
+    model_config: _FallbackSettingsConfigDict
+    model_fields: dict[str, Any]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        annotations = get_type_hints(cls, include_extras=True)
+        cls.model_fields = {name: None for name in annotations}
+
+    def __init__(self, **overrides: Any) -> None:
+        annotations = get_type_hints(self.__class__, include_extras=True)
+        self.model_fields = {name: None for name in annotations}
+        env: dict[str, str] = {}
+        env_file = getattr(self.model_config, "env_file", None)
+        if env_file:
+            env_path = Path(env_file)
+            if env_path.is_file():
+                env.update(_read_env_file(env_path))
+
+        for name in self.model_fields:
+            key = name.upper()
+            raw_value = overrides.get(name)
+            if raw_value is None:
+                raw_value = os.getenv(key, env.get(key))
+
+            if raw_value is None:
+                value = getattr(self.__class__, name)
+            else:
+                annotation = annotations.get(name, str)
+                value = _coerce(raw_value, annotation)
+
+            setattr(self, name, value)
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {name: getattr(self, name) for name in self.model_fields}
+
+
+BaseSettingsProto: type[Any]
+SettingsConfigDict: type[Any]
+
+try:  # pragma: no cover - prefer real pydantic-settings when available
+    from pydantic_settings import BaseSettings as _RealBaseSettings
+    from pydantic_settings import SettingsConfigDict as _RealConfigDict
+except Exception:  # pragma: no cover - fallback settings implementation
+    BaseSettingsProto = _FallbackBaseSettings
+    SettingsConfigDict = _FallbackSettingsConfigDict
 else:
-    _pydantic_settings_spec = importlib.util.find_spec("pydantic_settings")
-
-    if _pydantic_settings_spec is not None:  # pragma: no cover - import side effect
-        _pydantic_settings = importlib.import_module("pydantic_settings")
-        SettingsConfigDict = _pydantic_settings.SettingsConfigDict
-        BaseSettingsProto = _pydantic_settings.BaseSettings
-    else:
-        class SettingsConfigDict(dict):
-            """Lightweight mapping compatible with pydantic's SettingsConfigDict."""
-
-            env_file: str | None
-
-            def __init__(self, env_file: str | None = None, **kwargs: Any) -> None:
-                super().__init__(env_file=env_file, **kwargs)
-                self.env_file = env_file
-
-        class BaseSettingsProto:  # pragma: no cover - simple fallback implementation
-            """Fallback replacement for pydantic BaseSettings.
-
-            It supports env-file loading and basic type coercion for common scalar
-            types used in the settings model.
-            """
-
-            model_config: SettingsConfigDict
-            model_fields: dict[str, Any]
-
-            def __init_subclass__(cls, **kwargs: Any) -> None:
-                super().__init_subclass__(**kwargs)
-                annotations = get_type_hints(cls, include_extras=True)
-                cls.model_fields = {name: None for name in annotations}
-
-            def __init__(self, **overrides: Any) -> None:
-                annotations = get_type_hints(self.__class__, include_extras=True)
-                self.model_fields = {name: None for name in annotations}
-                env: dict[str, str] = {}
-                env_file = getattr(self.model_config, "env_file", None)
-                if env_file:
-                    env_path = Path(env_file)
-                    if env_path.is_file():
-                        env.update(_read_env_file(env_path))
-
-                for name in self.model_fields:
-                    key = name.upper()
-                    raw_value = overrides.get(name)
-                    if raw_value is None:
-                        raw_value = os.getenv(key, env.get(key))
-
-                    if raw_value is None:
-                        value = getattr(self.__class__, name)
-                    else:
-                        annotation = annotations.get(name, str)
-                        value = _coerce(raw_value, annotation)
-
-                    setattr(self, name, value)
-
-            def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-                return {name: getattr(self, name) for name in self.model_fields}
+    BaseSettingsProto = _RealBaseSettings
+    SettingsConfigDict = cast(type[Any], _RealConfigDict)
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -90,12 +87,18 @@ def _coerce(value: Any, annotation: Any) -> Any:
         target = annotation
     elif origin is list:
         (inner,) = get_args(annotation) or (str,)
-        return [_coerce(item, inner) for item in value.split(",")] if isinstance(value, str) else value
+        if isinstance(value, str):
+            items = [item.strip() for item in value.split(",")]
+            return [_coerce(item, inner) for item in items]
+        return value
     elif origin is tuple:
         inner = get_args(annotation)
         if isinstance(value, str):
             parts = [part.strip() for part in value.split(",")]
-            coerced = [_coerce(part, inner[idx] if idx < len(inner) else str) for idx, part in enumerate(parts)]
+            coerced: list[Any] = []
+            for idx, part in enumerate(parts):
+                target = inner[idx] if idx < len(inner) else str
+                coerced.append(_coerce(part, target))
             return tuple(coerced)
         return tuple(value)
     else:
@@ -117,7 +120,7 @@ def _coerce(value: Any, annotation: Any) -> Any:
     return value
 
 
-class Settings(BaseSettingsProto):
+class Settings(BaseSettingsProto):  # type: ignore[misc]
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
     qdrant_mode: str = "local"  # local | remote
@@ -153,13 +156,14 @@ class Settings(BaseSettingsProto):
     rate_limit_qps: float | None = None
     cors_allow_origins: list[str] = ["*"]
 
+    upload_dir: str = "./data/uploads"
+    upload_signed_url_ttl: int = 300
 
     database_url: str = "sqlite:///./data/app.db"
 
     auth_required: bool = False
     jwt_secret: str = "change-me"
     jwt_expiration_seconds: int = 3600
-
 
 
 _CACHE_KEYS = tuple(name.upper() for name in Settings.model_fields)
@@ -205,7 +209,7 @@ class _SettingsProxy:
         return repr(get_settings())
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        return get_settings().model_dump(*args, **kwargs)
+        return cast(dict[str, Any], get_settings().model_dump(*args, **kwargs))
 
 
 settings = _SettingsProxy()

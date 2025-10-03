@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-
-from types import SimpleNamespace
 import sys
+from types import SimpleNamespace
 
 from click.testing import CliRunner
 
 if "typer" not in sys.modules:
+
     class _TyperStub:
         def __init__(self, *args, **kwargs) -> None:  # pragma: no cover - shim
             pass
@@ -24,6 +24,7 @@ if "typer" not in sys.modules:
     sys.modules["typer"] = SimpleNamespace(Typer=_TyperStub, Option=_option_stub)
 
 if "pypdf" not in sys.modules:
+
     class _PdfReaderStub:  # pragma: no cover - shim
         def __init__(self, *args, **kwargs) -> None:
             raise RuntimeError("PdfReader stub should not be used in CLI tests")
@@ -31,6 +32,7 @@ if "pypdf" not in sys.modules:
     sys.modules["pypdf"] = SimpleNamespace(PdfReader=_PdfReaderStub)
 
 if "structlog" not in sys.modules:
+
     class _LoggerStub:  # pragma: no cover - shim
         def info(self, *args, **kwargs) -> None:
             return None
@@ -41,6 +43,7 @@ if "structlog" not in sys.modules:
     sys.modules["structlog"] = SimpleNamespace(get_logger=lambda *args, **kwargs: _LoggerStub())
 
 if "fitz" not in sys.modules:
+
     class _FitzStub(SimpleNamespace):  # pragma: no cover - shim
         def open(self, *args, **kwargs):
             raise RuntimeError("fitz stub should not be invoked in CLI tests")

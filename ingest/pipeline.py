@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from core.ingest.epub import extract_pages as extract_epub_pages
 from core.ingest.pdf_to_text import Page
@@ -37,11 +38,7 @@ class IngestResult:
 def _normalize_metadata(meta: MetadataInput) -> dict[str, Any]:
     if not meta:
         return {}
-    return {
-        str(key): value
-        for key, value in meta.items()
-        if value not in (None, "", [], {})
-    }
+    return {str(key): value for key, value in meta.items() if value not in (None, "", [], {})}
 
 
 def _hash_file(path: Path) -> str:
@@ -112,7 +109,7 @@ def _new_book_id() -> str:
 
 
 def _new_version() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 try:

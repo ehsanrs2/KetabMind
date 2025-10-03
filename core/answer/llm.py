@@ -49,9 +49,9 @@ def _get_env_bool(key: str, default: bool) -> bool:
 
 
 if not hasattr(httpx, "TimeoutException"):
+
     class _CompatTimeout(httpx.HTTPError):
         """Backfill TimeoutException for older httpx versions."""
-
 
     httpx.TimeoutException = _CompatTimeout  # type: ignore[attr-defined]
 
@@ -369,8 +369,7 @@ class OllamaLLM(LLM):
             raise LLMTimeoutError("Timed out while waiting for Ollama response") from exc
         except httpx.HTTPError as exc:  # pragma: no cover - defensive
             message = (
-                getattr(getattr(exc, "response", None), "text", "")
-                or "Failed to contact Ollama"
+                getattr(getattr(exc, "response", None), "text", "") or "Failed to contact Ollama"
             )
             raise LLMServiceError(message) from exc
         data = response.json()

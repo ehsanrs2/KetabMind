@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 
 from . import contextvars
 
@@ -17,14 +18,14 @@ __all__ = [
 
 
 _processors: list[Callable[[Any, str, dict[str, Any]], Any]] = []
-_wrapper_factory: Callable[..., "_Logger"] | None = None
+_wrapper_factory: Callable[..., _Logger] | None = None
 
 
 @dataclass
 class _Logger:
     name: str
 
-    def bind(self, **_: Any) -> "_Logger":  # pragma: no cover - logging helper
+    def bind(self, **_: Any) -> _Logger:  # pragma: no cover - logging helper
         return self
 
     def _run_processors(self, level: str, event: str, event_dict: dict[str, Any]) -> Any:
@@ -100,7 +101,9 @@ def configure(
     _wrapper_factory = wrapper_class
 
 
-def make_filtering_bound_logger(level: int) -> Callable[..., _Logger]:  # pragma: no cover - level unused
+def make_filtering_bound_logger(
+    level: int,
+) -> Callable[..., _Logger]:  # pragma: no cover - level unused
     def factory(name: str | None = None, **_: Any) -> _Logger:
         return _Logger(name or "structlog")
 

@@ -1,5 +1,3 @@
-import pytest
-
 from nlp.fa_normalize import normalize_fa
 
 

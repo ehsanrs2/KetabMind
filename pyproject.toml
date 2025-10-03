@@ -86,6 +86,9 @@ module = [
   "safetensors",
   "sentencepiece",
   "tokenizers",
+  "limits",
+  "prometheus_client",
+  "slowapi",
 ]
 ignore_missing_imports = true
 

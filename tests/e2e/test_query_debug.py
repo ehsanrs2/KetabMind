@@ -7,10 +7,9 @@ from typing import Any
 import pytest
 
 pytest.importorskip("fastapi")
-from fastapi import Request, URL
-
 from core.answer import answerer
 from core.retrieve.retriever import ScoredChunk
+from fastapi import URL, Request
 
 
 class StubRetriever:

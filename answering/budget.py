@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
 import re
-from typing import Iterable
-
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -90,8 +89,7 @@ def select_contexts(
             similarity_penalty = 0.0
             if candidate.tokens:
                 similarity_penalty = max(
-                    _jaccard_similarity(candidate.tokens, chosen.tokens)
-                    for chosen in selected
+                    _jaccard_similarity(candidate.tokens, chosen.tokens) for chosen in selected
                 )
             book_id = candidate.payload.get("book_id")
             if book_id is not None and book_id in seen_books:
@@ -122,15 +120,12 @@ def trim_snippet(text: str, question: str, target_tokens: int) -> str:
         return text.strip()
 
     question_terms = {
-        _normalize_word(token)
-        for token in re.findall(r"\w+", question, flags=re.UNICODE)
+        _normalize_word(token) for token in re.findall(r"\w+", question, flags=re.UNICODE)
     }
     question_terms.discard("")
 
     match_indices = [
-        index
-        for index, word in enumerate(words)
-        if _normalize_word(word) in question_terms
+        index for index, word in enumerate(words) if _normalize_word(word) in question_terms
     ]
 
     if not match_indices:
@@ -146,11 +141,7 @@ def trim_snippet(text: str, question: str, target_tokens: int) -> str:
             if end - start < target_tokens and start > 0:
                 start = max(0, end - target_tokens)
             window_words = words[start:end]
-            coverage = sum(
-                1
-                for token in window_words
-                if _normalize_word(token) in question_terms
-            )
+            coverage = sum(1 for token in window_words if _normalize_word(token) in question_terms)
             window_score = (coverage, -abs(center - (start + end) / 2.0), -center)
             if window_score > best_score:
                 best_score = window_score

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import importlib
 from pathlib import Path
 
@@ -12,9 +13,7 @@ def _point_count(client: QdrantClient, collection: str) -> int:
     return client.count(collection_name=collection, exact=True).count
 
 
-def test_duplicate_upload_reuses_vectors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_duplicate_upload_reuses_vectors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     collection_name = "hash_version_test"
     qdrant_path = tmp_path / "qdrant"
     qdrant_path.mkdir()

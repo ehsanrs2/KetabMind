@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,10 +30,10 @@ class User(TimestampMixin, Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    books: Mapped[List["Book"]] = relationship(back_populates="owner")
-    sessions: Mapped[List["Session"]] = relationship(back_populates="owner")
-    bookmarks: Mapped[List["Bookmark"]] = relationship(back_populates="owner")
-    messages: Mapped[List["Message"]] = relationship(back_populates="owner")
+    books: Mapped[list[Book]] = relationship(back_populates="owner")
+    sessions: Mapped[list[Session]] = relationship(back_populates="owner")
+    bookmarks: Mapped[list[Bookmark]] = relationship(back_populates="owner")
+    messages: Mapped[list[Message]] = relationship(back_populates="owner")
 
 
 class Book(TimestampMixin, Base):
@@ -50,13 +49,13 @@ class Book(TimestampMixin, Base):
     )
 
     owner: Mapped[User] = relationship(back_populates="books")
-    versions: Mapped[List["BookVersion"]] = relationship(
+    versions: Mapped[list[BookVersion]] = relationship(
         back_populates="book", cascade="all, delete-orphan"
     )
-    sessions: Mapped[List["Session"]] = relationship(
+    sessions: Mapped[list[Session]] = relationship(
         back_populates="book", cascade="all, delete-orphan"
     )
-    bookmarks: Mapped[List["Bookmark"]] = relationship(
+    bookmarks: Mapped[list[Bookmark]] = relationship(
         back_populates="book", cascade="all, delete-orphan"
     )
 
@@ -96,7 +95,7 @@ class Session(TimestampMixin, Base):
 
     owner: Mapped[User] = relationship(back_populates="sessions")
     book: Mapped[Book | None] = relationship(back_populates="sessions")
-    messages: Mapped[List["Message"]] = relationship(
+    messages: Mapped[list[Message]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
 

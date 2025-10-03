@@ -7,9 +7,8 @@ from typing import Any
 import pytest
 
 pytest.importorskip("fastapi")
-from fastapi import Request, URL
-
 from core.answer import answerer
+from fastapi import URL, Request
 
 
 @pytest.fixture(autouse=True)
@@ -111,14 +110,10 @@ def test_query_response_meta_and_debug_farsi() -> None:
 
     evidence_map = payload.get("evidence_map")
     assert evidence_map and evidence_map[0]["sentence"] == "این یک پاسخ نمونه است"
-    assert evidence_map[0]["supports"] == [
-        {"book_id": "ketab-1", "page": 13, "hybrid": 0.68}
-    ]
+    assert evidence_map[0]["supports"] == [{"book_id": "ketab-1", "page": 13, "hybrid": 0.68}]
 
     used_contexts = payload.get("used_contexts")
-    assert used_contexts == [
-        {"id": "fa-ctx-1", "book_id": "ketab-1", "page": 13, "hybrid": 0.68}
-    ]
+    assert used_contexts == [{"id": "fa-ctx-1", "book_id": "ketab-1", "page": 13, "hybrid": 0.68}]
 
 
 def test_query_response_meta_english() -> None:

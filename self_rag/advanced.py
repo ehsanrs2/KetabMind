@@ -241,8 +241,10 @@ def second_pass(question: str, settings: Settings) -> AnswerResult:
 
     original_top_m = getattr(retriever, "top_m", None)
     original_weights_mapping = getattr(retriever, "hybrid_weights", None)
-    original_weights = dict(original_weights_mapping) if original_weights_mapping is not None else None
-    original_retrieve = getattr(retriever, "retrieve")
+    original_weights = (
+        dict(original_weights_mapping) if original_weights_mapping is not None else None
+    )
+    original_retrieve = retriever.retrieve
     original_func = getattr(original_retrieve, "__func__", None)
 
     def _patched_retrieve(self: Any, query: str, top_n: int | None = None):  # type: ignore[override]

@@ -1,7 +1,9 @@
+# fastapi/testclient.py
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Mapping
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import parse_qsl
 
 from . import FastAPI, HTTPException, Response, UploadFile
@@ -9,11 +11,18 @@ from . import FastAPI, HTTPException, Response, UploadFile
 
 class TestClient:
     __test__ = False  # prevent pytest from collecting this helper as a test case
+
     def __init__(self, app: FastAPI) -> None:
         self.app = app
-        self.cookies: Dict[str, str] = {}
+        self.cookies: dict[str, str] = {}
 
-    def get(self, path: str, *, headers: Mapping[str, str] | None = None, params: Mapping[str, Any] | None = None) -> Response:
+    def get(
+        self,
+        path: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Response:
         return self.request("GET", path, headers=headers, params=params)
 
     def post(
@@ -69,7 +78,7 @@ class TestClient:
         json: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
         params: Mapping[str, Any] | None = None,
-    ) -> "_StreamContext":
+    ) -> _StreamContext:
         response = self.request(method, path, json=json, headers=headers, params=params)
         return _StreamContext(response)
 
@@ -84,16 +93,23 @@ class TestClient:
         headers: Mapping[str, str] | None = None,
         params: Mapping[str, Any] | None = None,
     ) -> Response:
+        # Parse query string on the path and merge with explicit 'params'
         query_params = dict(params or {})
         path_only = path
         if "?" in path:
             path_only, query_string = path.split("?", 1)
             query_params.update(dict(parse_qsl(query_string)))
+
         body = dict(json) if json is not None else None
         form_data = dict(data or {})
         request_headers = dict(headers or {})
+
+        # Attach cookies if present
         if self.cookies and not any(key.lower() == "cookie" for key in request_headers):
-            request_headers["Cookie"] = "; ".join(f"{name}={value}" for name, value in self.cookies.items())
+            request_headers["Cookie"] = "; ".join(
+                f"{name}={value}" for name, value in self.cookies.items()
+            )
+
         response = asyncio.run(
             self.app._call_route(
                 method,
@@ -105,6 +121,8 @@ class TestClient:
                 form_data=form_data,
             )
         )
+
+        # Track Set-Cookie from server
         set_cookie = response.headers.get("set-cookie")
         if set_cookie:
             cookie_pair, *_rest = set_cookie.split(";", 1)
@@ -117,12 +135,16 @@ class TestClient:
         return response
 
 
-def _prepare_files(files: Mapping[str, tuple[str, Any, str]] | None) -> Dict[str, UploadFile] | None:
+def _prepare_files(
+    files: Mapping[str, tuple[str, Any, str]] | None,
+) -> dict[str, UploadFile] | None:
+    """Normalize (filename, fileobj/bytes/str, content_type) into UploadFile."""
     if not files:
         return None
-    prepared: Dict[str, UploadFile] = {}
+    prepared: dict[str, UploadFile] = {}
     for name, value in files.items():
         filename, data, content_type = value
+        # Read raw bytes from file-like or accept bytes/str
         if hasattr(data, "read"):
             raw = data.read()
             if hasattr(data, "seek"):

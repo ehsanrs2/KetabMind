@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
-import re
 
 from answering.citations import build_citations
 from answering.guardrails import refusal_message, should_refuse

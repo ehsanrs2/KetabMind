@@ -1,9 +1,9 @@
 from typing import Any, cast
 
 import pytest
-from qdrant_client.http import models as rest
 
 import core.vector.qdrant as qdrant
+from qdrant_client.http import models as rest
 
 
 class DummyClient:

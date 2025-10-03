@@ -1,4 +1,5 @@
 """Persian text normalization utilities."""
+
 from __future__ import annotations
 
 import re
@@ -37,9 +38,7 @@ _SPACE_REPLACEMENTS = {
     "\u202f": " ",  # narrow no-break space, common in Persian inputs
 }
 
-_SUFFIX_PATTERN = re.compile(
-    rf"([{_PERSIAN_LETTERS}0-9۰-۹])(?P<suffix>{'|'.join(_SUFFIXES)})"
-)
+_SUFFIX_PATTERN = re.compile(rf"([{_PERSIAN_LETTERS}0-9۰-۹])(?P<suffix>{'|'.join(_SUFFIXES)})")
 _SUFFIX_WITH_SPACE_PATTERN = re.compile(
     rf"([{_PERSIAN_LETTERS}0-9۰-۹])\s+(?P<suffix>{'|'.join(_SUFFIXES)})"
 )

@@ -3,21 +3,22 @@ from __future__ import annotations
 import json
 import tempfile
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, cast
 
 import numpy as np
-import structlog
-from qdrant_client.http import models as rest
 
+import structlog
 from core.chunk.chunker import sliding_window_chunks
 from core.config import settings
 from core.embed import get_embedder
 from core.ingest.pdf_to_text import Page, pdf_to_pages
-from ingest.pipeline import pages_to_records, write_records
 from core.vector.qdrant_client import VectorStore
+from ingest.pipeline import pages_to_records, write_records
+from qdrant_client.http import models as rest
 from utils.hash import sha256_file
 
 log = structlog.get_logger()
@@ -45,7 +46,10 @@ def _load_manifest() -> dict[str, Any]:
         return {}
     try:
         with path.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return cast(dict[str, Any], data)
+        return {}
     except json.JSONDecodeError:  # pragma: no cover - defensive
         return {}
 
@@ -61,7 +65,7 @@ def _manifest_key(collection: str, file_hash: str) -> str:
 
 
 def _new_version() -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now.strftime("v%Y%m%d%H%M%S%f")
 
 
@@ -92,11 +96,7 @@ def _read_text_file(path: Path) -> list[tuple[str, int]]:
 def _clean_metadata(meta: Mapping[str, Any] | None) -> dict[str, Any]:
     if not meta:
         return {}
-    return {
-        str(key): value
-        for key, value in meta.items()
-        if value not in (None, "", [], {})
-    }
+    return {str(key): value for key, value in meta.items() if value not in (None, "", [], {})}
 
 
 def _jsonl_path(book_id: str) -> Path:
@@ -126,9 +126,7 @@ def index_path(
     if cached:
         book_id = str(cached.get("book_id"))
         version = str(cached.get("version"))
-        indexed_chunks = int(cached.get("indexed_chunks", 0)) or int(
-            cached.get("chunks", 0)
-        )
+        indexed_chunks = int(cached.get("indexed_chunks", 0)) or int(cached.get("chunks", 0))
         skipped_count = indexed_chunks or 1
         log.info(
             "indexed",
@@ -262,8 +260,7 @@ def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
             book_id=str(cached.get("book_id")),
             version=str(cached.get("version")),
             file_hash=file_hash,
-            indexed_chunks=int(cached.get("indexed_chunks", 0))
-            or int(cached.get("chunks", 0)),
+            indexed_chunks=int(cached.get("indexed_chunks", 0)) or int(cached.get("chunks", 0)),
         )
 
     with VectorStore(
@@ -304,3 +301,15 @@ def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
         file_hash=file_hash,
         indexed_chunks=indexed_chunks,
     )
+
+
+def update_indexed_file_path(collection: str, file_hash: str, path: Path) -> None:
+    """Update the stored filesystem path for an indexed file."""
+
+    manifest = _load_manifest()
+    key = _manifest_key(collection, file_hash)
+    entry = manifest.get(key)
+    if not entry:
+        return
+    entry["path"] = str(path)
+    _save_manifest(manifest)

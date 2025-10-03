@@ -1,13 +1,11 @@
 """Utilities for combining multiple retrieval scores with configurable weights."""
+
 from __future__ import annotations
-
-from typing import Dict
-
 
 _COMPONENTS = ("cosine", "lexical", "reranker")
 
 
-def parse_weights(spec: str) -> Dict[str, float]:
+def parse_weights(spec: str) -> dict[str, float]:
     """Parse a weight specification string into a dictionary.
 
     The specification must contain comma-separated ``key=value`` pairs.
@@ -34,7 +32,7 @@ def parse_weights(spec: str) -> Dict[str, float]:
     if not spec:
         return {}
 
-    weights: Dict[str, float] = {}
+    weights: dict[str, float] = {}
     for entry in spec.split(","):
         item = entry.strip()
         if not item:
@@ -55,7 +53,7 @@ def hybrid_score(
     cosine: float | None,
     lexical: float | None,
     reranker: float | None,
-    weights: Dict[str, float],
+    weights: dict[str, float],
 ) -> float:
     """Combine individual scores into a single hybrid score.
 
@@ -71,19 +69,12 @@ def hybrid_score(
         "reranker": 0.0 if reranker is None else reranker,
     }
 
-    component_weights = {
-        name: float(weights.get(name, 0.0)) for name in _COMPONENTS
-    }
+    component_weights = {name: float(weights.get(name, 0.0)) for name in _COMPONENTS}
 
     total_weight = sum(component_weights.values())
     if total_weight == 0.0:
         return 0.0
 
-    normalized_weights = {
-        name: weight / total_weight for name, weight in component_weights.items()
-    }
+    normalized_weights = {name: weight / total_weight for name, weight in component_weights.items()}
 
-    return sum(
-        component_scores[name] * normalized_weights[name]
-        for name in _COMPONENTS
-    )
+    return sum(component_scores[name] * normalized_weights[name] for name in _COMPONENTS)

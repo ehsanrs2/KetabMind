@@ -1,10 +1,11 @@
 """Simple thread-safe LRU cache implementation."""
+
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Iterator
 from threading import RLock
-from typing import Generic, Iterator, Tuple, TypeVar, overload
-
+from typing import Generic, TypeVar, overload
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -18,7 +19,7 @@ class LRUCache(Generic[K, V]):
         if maxsize <= 0:
             raise ValueError("maxsize must be positive")
         self.maxsize = int(maxsize)
-        self._store: "OrderedDict[K, V]" = OrderedDict()
+        self._store: OrderedDict[K, V] = OrderedDict()
         self._lock = RLock()
 
     def __len__(self) -> int:
@@ -30,12 +31,10 @@ class LRUCache(Generic[K, V]):
             return key in self._store
 
     @overload
-    def get(self, key: K) -> V | None:
-        ...
+    def get(self, key: K) -> V | None: ...
 
     @overload
-    def get(self, key: K, default: T) -> V | T:
-        ...
+    def get(self, key: K, default: T) -> V | T: ...
 
     def get(self, key: K, default: T | None = None) -> V | T | None:
         with self._lock:
@@ -64,7 +63,7 @@ class LRUCache(Generic[K, V]):
         with self._lock:
             self._store.clear()
 
-    def items(self) -> Iterator[Tuple[K, V]]:
+    def items(self) -> Iterator[tuple[K, V]]:
         with self._lock:
             return iter(self._store.copy().items())
 

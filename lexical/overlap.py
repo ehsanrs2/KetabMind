@@ -1,8 +1,8 @@
 """Lexical overlap utilities for hybrid retrieval."""
+
 from __future__ import annotations
 
 import re
-from typing import Set
 
 from core.config import settings
 from nlp.fa_normalize import normalize_fa
@@ -71,7 +71,7 @@ def _maybe_normalize(text: str) -> str:
     return text
 
 
-def _tokenize(text: str) -> Set[str]:
+def _tokenize(text: str) -> set[str]:
     normalized = _maybe_normalize(text)
     tokens = {
         token.lower()
@@ -81,7 +81,7 @@ def _tokenize(text: str) -> Set[str]:
     return tokens
 
 
-def _jaccard(a: Set[str], b: Set[str]) -> float:
+def _jaccard(a: set[str], b: set[str]) -> float:
     if not a or not b:
         return 0.0
     intersection = len(a & b)

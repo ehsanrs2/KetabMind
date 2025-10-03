@@ -1,10 +1,10 @@
 """Embedding adapter for supported multilingual models."""
+
 from __future__ import annotations
 
 import hashlib
 import os
 from collections.abc import Iterable
-from typing import List, Optional
 
 import structlog
 
@@ -42,9 +42,9 @@ class EmbeddingAdapter:
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        batch_size: Optional[int] = None,
-        device: Optional[str] = None,
+        model_name: str | None = None,
+        batch_size: int | None = None,
+        device: str | None = None,
     ) -> None:
         env_model = os.getenv("EMBED_MODEL_NAME")
         env_batch = os.getenv("BATCH_SIZE")
@@ -68,14 +68,10 @@ class EmbeddingAdapter:
             self.batch_size = 16
 
         if not self.is_mock and torch is None:
-            raise ImportError(
-                f"PyTorch is required for embedding model '{self.model_name}'."
-            )
+            raise ImportError(f"PyTorch is required for embedding model '{self.model_name}'.")
 
         if not self.is_mock and AutoModel is None:
-            raise ImportError(
-                f"transformers is required for embedding model '{self.model_name}'."
-            )
+            raise ImportError(f"transformers is required for embedding model '{self.model_name}'.")
 
         if device is not None:
             requested_device = device
@@ -104,13 +100,11 @@ class EmbeddingAdapter:
 
         quant_env = (os.getenv("EMBED_QUANT") or "").strip().lower()
         if quant_env in {"8", "8bit"}:
-            self.quantization_mode: Optional[str] = "8bit"
+            self.quantization_mode: str | None = "8bit"
         elif quant_env in {"4", "4bit"}:
             self.quantization_mode = "4bit"
         elif quant_env:
-            raise ValueError(
-                "EMBED_QUANT must be empty, '8bit', or '4bit'"
-            )
+            raise ValueError("EMBED_QUANT must be empty, '8bit', or '4bit'")
         else:
             self.quantization_mode = None
 
@@ -157,9 +151,7 @@ class EmbeddingAdapter:
         try:
             import bitsandbytes  # type: ignore  # noqa: F401
         except ImportError as exc:  # pragma: no cover - requires optional dependency
-            raise ImportError(
-                "bitsandbytes is required when EMBED_QUANT is set."
-            ) from exc
+            raise ImportError("bitsandbytes is required when EMBED_QUANT is set.") from exc
 
         from transformers import BitsAndBytesConfig
 
@@ -189,7 +181,7 @@ class EmbeddingAdapter:
         mask_sum = mask.sum(dim=1).clamp(min=1e-9)
         return sum_embeddings / mask_sum
 
-    def embed_texts(self, texts: List[str], batch_size: int = 16) -> List[List[float]]:
+    def embed_texts(self, texts: list[str], batch_size: int = 16) -> list[list[float]]:
         """Embed a batch of texts and return list of embeddings."""
         if isinstance(texts, (str, bytes)) or not isinstance(texts, Iterable):
             raise TypeError("texts must be an iterable of strings")
@@ -216,7 +208,7 @@ class EmbeddingAdapter:
 
         assert self.model is not None and self.tokenizer is not None
 
-        results: List[List[float]] = []
+        results: list[list[float]] = []
         for start in range(0, len(texts), effective_batch_size):
             batch_texts = texts[start : start + effective_batch_size]
             encodings = self.tokenizer(  # type: ignore[operator]
@@ -238,7 +230,7 @@ class EmbeddingAdapter:
         return results
 
     @staticmethod
-    def _hash_embed(text: str, dim: int = 64) -> List[float]:
+    def _hash_embed(text: str, dim: int = 64) -> list[float]:
         """Deterministic hash-based embedding used for mock mode."""
         vec = [0.0] * dim
         for token in text.lower().split():
