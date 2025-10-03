@@ -46,13 +46,17 @@ def test_select_contexts_respects_budget_and_diversifies() -> None:
         {
             "id": "c3",
             "book_id": "book-b",
-            "snippet": "Statistical learning theory explores generalization bounds and VC dimension.",
+            "snippet": (
+                "Statistical learning theory explores generalization bounds and VC dimension."
+            ),
             "hybrid": 0.9,
         },
         {
             "id": "c4",
             "book_id": "book-c",
-            "snippet": "Reinforcement learning agents optimise rewards via value functions and policies.",
+            "snippet": (
+                "Reinforcement learning agents optimise rewards via value functions and policies."
+            ),
             "hybrid": 0.88,
         },
     ]

@@ -80,11 +80,12 @@ def upgrade() -> None:
         {"email": _TEST_USER_EMAIL},
     ).scalar_one()
 
-    for table in ("books", "book_versions", "sessions", "bookmarks", "messages"):
-        bind.execute(
-            sa.text(f"UPDATE {table} SET owner_id = :user_id WHERE owner_id IS NULL"),
-            {"user_id": user_id},
-        )
+    metadata = sa.MetaData()
+    table_names = ("books", "book_versions", "sessions", "bookmarks", "messages")
+    metadata.reflect(bind=bind, only=table_names)
+    for table_name in table_names:
+        table = sa.Table(table_name, metadata, autoload_with=bind)
+        bind.execute(table.update().where(table.c.owner_id.is_(None)).values(owner_id=user_id))
 
     op.alter_column("books", "owner_id", nullable=False)
     op.alter_column("book_versions", "owner_id", nullable=False)

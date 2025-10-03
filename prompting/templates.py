@@ -49,7 +49,7 @@ def _gather_guidance(guidelines: dict | None, exclude: Iterable[str]) -> list[st
             continue
         if isinstance(value, str) and value.strip():
             extra.append(value.strip())
-        elif isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+        elif isinstance(value, Iterable) and not isinstance(value, str | bytes):
             for item in value:
                 if isinstance(item, str) and item.strip():
                     extra.append(item.strip())
@@ -131,14 +131,18 @@ def bilingual_answer_template(
             f"Keep the answer concise (under {ANSWER_MAX_TOKENS} tokens).",
             (
                 "Rely only on the context passages and add an inline citation using "
-                f"{citation_fmt} to every factual sentence. Replace the placeholders with the correct metadata."
+                f"{citation_fmt} to every factual sentence."
             ),
-            (
-                'Do not fabricate citations. If evidence is insufficient, reply exactly: "Not enough information to answer accurately."'
-            ),
+            "Replace the placeholders with the correct metadata.",
+            "Do not fabricate citations.",
+            "If evidence is insufficient, reply exactly:",
+            '"Not enough information to answer accurately."',
         ]
         style_instruction = (
-            "Format the answer as bullet points starting with '• ' and keep each bullet to one sentence with a citation."
+            (
+                "Format the answer as bullet points starting with '• ' and keep each bullet "
+                "to one sentence with a citation."
+            )
             if selected_style == "bullets"
             else "Write the answer in 1-2 short paragraphs and cite every sentence."
         )

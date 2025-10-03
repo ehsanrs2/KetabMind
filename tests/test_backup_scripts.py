@@ -1,7 +1,10 @@
 import os
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+
+import pytest
 
 
 def test_backup_creates_archive(tmp_path):
@@ -26,8 +29,14 @@ def test_backup_creates_archive(tmp_path):
     )
 
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "backup_qdrant.sh"
-    result = subprocess.run(
-        ["bash", str(script_path)],
+    assert script_path.is_file(), "Backup script is missing"
+
+    bash_path = shutil.which("bash")
+    if bash_path is None:
+        pytest.skip("bash executable not available")
+
+    result = subprocess.run(  # noqa: S603
+        [bash_path, str(script_path)],
         check=True,
         text=True,
         capture_output=True,

@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 
 pytest.importorskip("fastapi")
-from core.answer import answerer
-from core.retrieve.retriever import ScoredChunk
-from fastapi import URL, Request
+from core.answer import answerer  # noqa: E402
+from core.retrieve.retriever import ScoredChunk  # noqa: E402
+from fastapi import URL, Request  # noqa: E402
 
 
 class StubRetriever:

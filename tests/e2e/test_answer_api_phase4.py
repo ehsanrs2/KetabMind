@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 
 pytest.importorskip("fastapi")
-from core.answer import answerer
-from fastapi import URL, Request
+from core.answer import answerer  # noqa: E402
+from fastapi import URL, Request  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

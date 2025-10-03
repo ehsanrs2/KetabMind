@@ -51,8 +51,9 @@ class EmbeddingAdapter:
 
         self.model_name = model_name or env_model or "bge-m3"
         if self.model_name not in self.SUPPORTED_MODELS:
+            supported = ", ".join(sorted(self.SUPPORTED_MODELS))
             raise ValueError(
-                f"Model '{self.model_name}' is not supported. Supported models: {sorted(self.SUPPORTED_MODELS)}"
+                f"Model '{self.model_name}' is not supported. Supported models: {supported}"
             )
 
         self.is_mock = self.model_name == "mock"
@@ -183,7 +184,7 @@ class EmbeddingAdapter:
 
     def embed_texts(self, texts: list[str], batch_size: int = 16) -> list[list[float]]:
         """Embed a batch of texts and return list of embeddings."""
-        if isinstance(texts, (str, bytes)) or not isinstance(texts, Iterable):
+        if isinstance(texts, str | bytes) or not isinstance(texts, Iterable):
             raise TypeError("texts must be an iterable of strings")
 
         if not texts:

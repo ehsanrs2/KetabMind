@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-# Provide lightweight stubs for optional runtime dependencies before importing the module under test.
+# Provide lightweight stubs for optional runtime dependencies before
+# importing the module under test.
 typer_module = types.ModuleType("typer")
 
 

@@ -9,7 +9,11 @@ from typing import TypedDict
 
 from pypdf import PdfReader
 
+import structlog
+
 from ..config import settings
+
+logger = structlog.get_logger(__name__)
 
 
 class PageDict(TypedDict):
@@ -41,6 +45,11 @@ def _load_toc(reader: PdfReader) -> list[tuple[int, str]]:
             try:
                 page_index = reader.get_destination_page_number(item)
             except Exception:  # pragma: no cover - fallback when destination missing
+                logger.debug(
+                    "pdf.toc_entry_lookup_failed",
+                    exc_info=True,
+                    title=title,
+                )
                 continue
             entries.append((page_index + 1, title))
 

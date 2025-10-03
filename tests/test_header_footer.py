@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import sys
 from dataclasses import dataclass
@@ -37,8 +38,8 @@ if "pypdf" not in sys.modules:
 PY_YAML_AVAILABLE = importlib.util.find_spec("yaml") is not None
 
 
-from ingest.clean_rules import apply_rules, load_rules
-from ingest.pipeline import pages_to_records
+from ingest.clean_rules import apply_rules, load_rules  # noqa: E402
+from ingest.pipeline import pages_to_records  # noqa: E402
 
 
 @dataclass

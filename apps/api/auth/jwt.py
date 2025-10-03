@@ -141,7 +141,7 @@ def verify_token(token: str) -> Mapping[str, Any]:
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token payload") from exc
     exp = payload.get("exp")
-    if isinstance(exp, (int, float)) and exp < time.time():
+    if isinstance(exp, int | float) and exp < time.time():
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token expired")
     return payload
 
