@@ -1,0 +1,171 @@
+:root {
+  --font-vazirmatn: 'Vazirmatn', sans-serif;
+  font-family: var(--font-vazirmatn);
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: #f7f8fa;
+  color: #1f2933;
+  font-family: var(--font-vazirmatn), sans-serif;
+}
+
+body.rtl {
+  direction: rtl;
+  text-align: right;
+}
+
+html,
+body {
+  transition: direction 0.2s ease-in-out;
+}
+
+main.container {
+  padding: 1.5rem;
+}
+
+.navbar {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  gap: 1rem;
+}
+
+.navbar__brand a {
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}
+
+.navbar__links {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.navbar__links a,
+.navbar__auth-links a {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.navbar__spacer {
+  flex: 1 1 auto;
+}
+
+.navbar__user {
+  position: relative;
+}
+
+.navbar__user-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.navbar__dropdown {
+  position: absolute;
+  right: 0;
+  top: 2.5rem;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0;
+  min-width: 8rem;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1);
+}
+
+body.rtl .navbar__dropdown {
+  left: 0;
+  right: auto;
+}
+
+.navbar__dropdown-item {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+body.rtl .navbar__dropdown-item {
+  text-align: right;
+}
+
+.loading {
+  padding: 2rem;
+  text-align: center;
+}
+
+.form {
+  max-width: 420px;
+  margin: 2rem auto;
+  background: #ffffff;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.form input,
+.form select,
+.form textarea {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5f5;
+  font-size: 1rem;
+}
+
+.form button {
+  padding: 0.75rem 1.25rem;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.page-card {
+  background: #ffffff;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  margin: 0 auto;
+  max-width: 800px;
+}
+
+.page-card h1 {
+  margin-top: 0;
+}
+
+.page-card textarea {
+  width: 100%;
+  min-height: 200px;
+}
+
+.language-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
