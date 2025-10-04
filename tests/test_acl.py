@@ -142,6 +142,41 @@ def test_bookmarks_filter_by_owner(
     assert bookmark_repo_one.list() == []
 
 
+def test_bookmarks_filter_by_tag(
+    db_session: Session, owners: tuple[models.User, models.User]
+) -> None:
+    owner_one, _ = owners
+    session_repo = repositories.SessionRepository(db_session, owner_one.id)
+    session = session_repo.create(title="Session One")
+    message_repo = repositories.MessageRepository(db_session, owner_one.id)
+    assistant_one = message_repo.create(
+        session_id=session.id, role="assistant", content="Response one"
+    )
+    assistant_two = message_repo.create(
+        session_id=session.id, role="assistant", content="Response two"
+    )
+    assistant_three = message_repo.create(
+        session_id=session.id, role="assistant", content="Response three"
+    )
+
+    bookmark_repo = repositories.BookmarkRepository(db_session, owner_one.id)
+    bookmark_one = bookmark_repo.create(message_id=assistant_one.id, tag="math")
+    bookmark_two = bookmark_repo.create(message_id=assistant_two.id, tag="physics")
+    bookmark_three = bookmark_repo.create(message_id=assistant_three.id, tag="math")
+
+    all_tags = [b.tag for b in bookmark_repo.list()]
+    assert all_tags == ["math", "physics", "math"]
+
+    math_bookmarks = bookmark_repo.list(tag="math")
+    assert {b.id for b in math_bookmarks} == {bookmark_one.id, bookmark_three.id}
+
+    physics_bookmarks = bookmark_repo.list(tag="physics")
+    assert [b.id for b in physics_bookmarks] == [bookmark_two.id]
+
+    empty_bookmarks = bookmark_repo.list(tag="history")
+    assert empty_bookmarks == []
+
+
 def test_messages_filter_by_owner(
     db_session: Session, owners: tuple[models.User, models.User]
 ) -> None:

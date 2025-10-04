@@ -170,12 +170,14 @@ class SessionRepository(_BaseRepository):
 class BookmarkRepository(_BaseRepository):
     model = models.Bookmark
 
-    def list(self) -> list[models.Bookmark]:
+    def list(self, *, tag: str | None = None) -> list[models.Bookmark]:
         stmt = (
             select(models.Bookmark)
             .where(models.Bookmark.owner_id == self.owner_id)
             .order_by(models.Bookmark.created_at.desc())
         )
+        if tag:
+            stmt = stmt.where(models.Bookmark.tag == tag)
         return self._all(stmt)
 
     def get(self, bookmark_id: int) -> models.Bookmark | None:
@@ -185,7 +187,7 @@ class BookmarkRepository(_BaseRepository):
         )
         return self._one(stmt)
 
-    def create(self, *, message_id: int) -> models.Bookmark:
+    def create(self, *, message_id: int, tag: str | None = None) -> models.Bookmark:
         message_stmt = select(models.Message).where(
             models.Message.id == message_id,
             models.Message.owner_id == self.owner_id,
@@ -201,11 +203,15 @@ class BookmarkRepository(_BaseRepository):
         )
         existing = self.session.scalar(existing_stmt)
         if existing is not None:
+            if tag is not None and tag != existing.tag:
+                existing.tag = tag
+                self.session.add(existing)
             return existing
         bookmark = models.Bookmark(
             session_id=message.session_id,
             message_id=message.id,
             owner_id=self.owner_id,
+            tag=tag,
         )
         self.session.add(bookmark)
         self.session.flush()
