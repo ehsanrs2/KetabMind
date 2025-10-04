@@ -94,6 +94,12 @@ def setup_api_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         cast(Any, prom_stub).Gauge = _Metric
         cast(Any, prom_stub).Histogram = _Metric
 
+        class _Registry:
+            def __init__(self) -> None:
+                self._names_to_collectors: dict[str, Any] = {}
+
+        cast(Any, prom_stub).REGISTRY = _Registry()
+
         def generate_latest() -> bytes:
             return b""
 

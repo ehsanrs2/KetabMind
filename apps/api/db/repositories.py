@@ -228,6 +228,13 @@ class BookmarkRepository(_BaseRepository):
 class MessageRepository(_BaseRepository):
     model = models.Message
 
+    def get(self, message_id: int) -> models.Message | None:
+        stmt = select(models.Message).where(
+            models.Message.id == message_id,
+            models.Message.owner_id == self.owner_id,
+        )
+        return self._one(stmt)
+
     def list_for_session(self, session_id: int) -> list[models.Message]:
         stmt = (
             select(models.Message)
@@ -263,6 +270,20 @@ class MessageRepository(_BaseRepository):
         self.session.add(message)
         self.session.flush()
         return message
+
+    def get_previous_user_message(self, message: models.Message) -> models.Message | None:
+        stmt = (
+            select(models.Message)
+            .where(
+                models.Message.owner_id == self.owner_id,
+                models.Message.session_id == message.session_id,
+                models.Message.id < message.id,
+                models.Message.role == "user",
+            )
+            .order_by(models.Message.id.desc())
+            .limit(1)
+        )
+        return self._one(stmt)
 
 
 def delete_sessions_older_than(session: Session, *, older_than: datetime) -> int:

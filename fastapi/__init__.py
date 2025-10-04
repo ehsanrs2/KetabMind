@@ -49,10 +49,13 @@ class Response:
         *,
         status_code: int = 200,
         headers: Mapping[str, str] | None = None,
+        media_type: str | None = None,
     ) -> None:
         self.status_code = status_code
         self._content: Any = content
         self.headers: dict[str, str] = dict(headers or {})
+        if media_type:
+            self.headers.setdefault("content-type", media_type)
 
     def json(self) -> Any:
         return self._content
@@ -207,6 +210,12 @@ class FastAPI:
             return cast(Response, result)
 
         self._middleware.append(wrapper)
+
+    def on_event(self, event_type: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            return func
+
+        return decorator
 
     def middleware(self, typ: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         if typ != "http":
