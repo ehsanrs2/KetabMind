@@ -12,6 +12,7 @@ import mimetypes
 import shutil
 import tempfile
 import time
+from datetime import datetime
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from pathlib import Path
@@ -23,21 +24,23 @@ from prometheus_client import (
     Counter,
     Gauge,
     Histogram,
+    REGISTRY,
     generate_latest,
 )
 from slowapi import Limiter
 
 import structlog
-from apps.api.auth import (
-    authenticate_user,
-    create_access_token,
-    get_current_user,
-    get_user_bookmarks,
-    get_user_profile,
-    get_user_sessions,
-)
+from apps.api.auth import authenticate_user, create_access_token, get_current_user, get_user_profile
+from apps.api.db import models, repositories
+from apps.api.db.session import session_scope
 from apps.api.routes.query import build_query_response
-from apps.api.schemas import IndexRequest, Metadata
+from apps.api.schemas import (
+    BookmarkCreate,
+    IndexRequest,
+    MessageCreate,
+    Metadata,
+    SessionCreate,
+)
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
@@ -45,6 +48,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request,
 from fastapi.middleware import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from sqlalchemy import func, select
 from utils.hash import sha256_file
 from utils.logging import configure_logging
 from utils.pydantic_compat import BaseModel
@@ -89,6 +93,9 @@ class _GZipMiddleware:
         body = getattr(response, "_content", None)
         if body is None:
             return response
+        existing_encoding = response.headers.get("content-encoding")
+        if existing_encoding:
+            return response
         if isinstance(body, bytes):
             raw = body
         elif isinstance(body, str):
@@ -101,7 +108,7 @@ class _GZipMiddleware:
         if len(raw) < self.minimum_size:
             return response
         compressed = gzip.compress(raw)
-        response.headers.setdefault("content-encoding", "gzip")
+        response.headers["content-encoding"] = "gzip"
         response.headers.setdefault("vary", "Accept-Encoding")
         response.headers["content-length"] = str(len(compressed))
         response._content = compressed
@@ -148,28 +155,44 @@ app.add_middleware(
 )
 
 if "REQUEST_COUNTER" not in globals():
-    REQUEST_COUNTER = Counter(
-        "api_requests_total",
-        "Total number of API requests",
-        labelnames=("path", "method", "status"),
-    )
+    existing_counter = REGISTRY._names_to_collectors.get("api_requests_total")
+    if isinstance(existing_counter, Counter):
+        REQUEST_COUNTER = existing_counter
+    else:
+        REQUEST_COUNTER = Counter(
+            "api_requests_total",
+            "Total number of API requests",
+            labelnames=("path", "method", "status"),
+        )
 if "REQUEST_LATENCY" not in globals():
-    REQUEST_LATENCY = Histogram(
-        "api_request_latency_seconds",
-        "Latency of API requests in seconds",
-        labelnames=("path", "method"),
-    )
+    existing_latency = REGISTRY._names_to_collectors.get("api_request_latency_seconds")
+    if isinstance(existing_latency, Histogram):
+        REQUEST_LATENCY = existing_latency
+    else:
+        REQUEST_LATENCY = Histogram(
+            "api_request_latency_seconds",
+            "Latency of API requests in seconds",
+            labelnames=("path", "method"),
+        )
 if "ERROR_COUNTER" not in globals():
-    ERROR_COUNTER = Counter(
-        "api_errors_total",
-        "Total number of API errors",
-        labelnames=("path", "method"),
-    )
+    existing_error = REGISTRY._names_to_collectors.get("api_errors_total")
+    if isinstance(existing_error, Counter):
+        ERROR_COUNTER = existing_error
+    else:
+        ERROR_COUNTER = Counter(
+            "api_errors_total",
+            "Total number of API errors",
+            labelnames=("path", "method"),
+        )
 if "TOKEN_USAGE_GAUGE" not in globals():
-    TOKEN_USAGE_GAUGE = Gauge(
-        "token_usage",
-        "Token usage reported by the Answer Agent",
-    )
+    existing_token = REGISTRY._names_to_collectors.get("token_usage")
+    if isinstance(existing_token, Gauge):
+        TOKEN_USAGE_GAUGE = existing_token
+    else:
+        TOKEN_USAGE_GAUGE = Gauge(
+            "token_usage",
+            "Token usage reported by the Answer Agent",
+        )
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -202,6 +225,137 @@ def _get(path: str) -> Callable[[F], F]:
 
 def _post(path: str) -> Callable[[F], F]:
     return cast(Callable[[F], F], app.post(path))
+
+
+def _delete(path: str) -> Callable[[F], F]:
+    def decorator(func: F) -> F:
+        add_route = getattr(app, "_add_route", None)
+        if callable(add_route):
+            add_route("DELETE", path, func)
+        else:  # pragma: no cover - defensive for unsupported stubs
+            raise RuntimeError("DELETE method not supported by FastAPI stub")
+        return func
+
+    return decorator
+
+
+def _parse_identifier(value: Any, *, field: str) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            with suppress(ValueError):
+                return int(stripped)
+    raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Invalid {field}")
+
+
+def _isoformat(timestamp: datetime | None) -> str | None:
+    if timestamp is None:
+        return None
+    return timestamp.isoformat()
+
+
+def _safe_json_list(raw: str | None) -> list[str] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    cleaned: list[str] = []
+    for item in parsed:
+        if isinstance(item, str):
+            cleaned.append(item)
+    return cleaned or None
+
+
+def _safe_json_mapping(raw: str | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, Mapping):
+        return dict(parsed)
+    return None
+
+
+def _serialize_message(message: models.Message) -> dict[str, Any]:
+    citations = _safe_json_list(message.citations)
+    meta = _safe_json_mapping(message.meta)
+    return {
+        "id": message.id,
+        "session_id": message.session_id,
+        "role": message.role,
+        "content": message.content,
+        "citations": citations,
+        "meta": meta,
+        "created_at": _isoformat(message.created_at),
+    }
+
+
+def _session_last_activity(session_obj: models.Session, db_session) -> datetime | None:
+    last_message_at = db_session.scalar(
+        select(func.max(models.Message.created_at)).where(
+            models.Message.session_id == session_obj.id
+        )
+    )
+    return last_message_at or session_obj.updated_at
+
+
+def _serialize_session(session_obj: models.Session, db_session) -> dict[str, Any]:
+    last_activity = _session_last_activity(session_obj, db_session)
+    return {
+        "id": session_obj.id,
+        "title": session_obj.title,
+        "topic": session_obj.title,
+        "updated_at": _isoformat(session_obj.updated_at),
+        "last_activity": _isoformat(last_activity),
+    }
+
+
+def _serialize_bookmark(bookmark: models.Bookmark) -> dict[str, Any]:
+    session_obj = bookmark.session
+    message_obj = bookmark.message
+    return {
+        "id": bookmark.id,
+        "session_id": bookmark.session_id,
+        "message_id": bookmark.message_id,
+        "created_at": _isoformat(bookmark.created_at),
+        "session": (
+            {
+                "id": session_obj.id,
+                "title": session_obj.title,
+                "updated_at": _isoformat(session_obj.updated_at),
+            }
+            if session_obj
+            else None
+        ),
+        "message": _serialize_message(message_obj) if message_obj else None,
+    }
+
+
+def _ensure_owner(db_session, user_profile: Mapping[str, Any]) -> models.User:
+    email = user_profile.get("email")
+    if not isinstance(email, str) or not email:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile"
+        )
+    normalized_email = email.strip().lower()
+    repo = repositories.UserRepository(db_session)
+    user = repo.get_by_email(normalized_email)
+    if user is None:
+        name = user_profile.get("name")
+        user = repo.create(email=normalized_email, name=str(name) if name else None)
+    else:
+        name = user_profile.get("name")
+        if isinstance(name, str) and name and name != (user.name or ""):
+            user.name = name
+    return user
 
 
 @app.middleware("http")
@@ -622,7 +776,47 @@ def bookmarks(
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
-    return {"bookmarks": get_user_bookmarks(target_id)}
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        repo = repositories.BookmarkRepository(db_session, owner.id)
+        records = repo.list()
+        payload = [_serialize_bookmark(record) for record in records]
+        return {"bookmarks": payload}
+
+
+@_post("/bookmarks")
+def create_bookmark(
+    payload: BookmarkCreate,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        repo = repositories.BookmarkRepository(db_session, owner.id)
+        message_id = _parse_identifier(payload.message_id, field="message_id")
+        try:
+            bookmark = repo.create(message_id=message_id)
+        except ValueError as exc:
+            detail = str(exc)
+            status_code = status.HTTP_404_NOT_FOUND
+            if "assistant" in detail.lower():
+                status_code = status.HTTP_400_BAD_REQUEST
+            raise HTTPException(status_code, detail) from exc
+        db_session.refresh(bookmark)
+        return {"bookmark": _serialize_bookmark(bookmark)}
+
+
+@_delete("/bookmarks/{bookmark_id}")
+def delete_bookmark(
+    bookmark_id: str,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> Response:
+    bookmark_pk = _parse_identifier(bookmark_id, field="bookmark_id")
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        repo = repositories.BookmarkRepository(db_session, owner.id)
+        if not repo.delete(bookmark_pk):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Bookmark not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @_get("/sessions")
@@ -633,10 +827,87 @@ def sessions(
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
-    return {"sessions": get_user_sessions(target_id)}
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        repo = repositories.SessionRepository(db_session, owner.id)
+        records = repo.list()
+        payload = [_serialize_session(record, db_session) for record in records]
+        return {"sessions": payload}
+
+
+@_post("/sessions")
+def create_session(
+    payload: SessionCreate,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        repo = repositories.SessionRepository(db_session, owner.id)
+        title = (payload.title or "New session").strip() or "New session"
+        book_id: int | None = None
+        if payload.book_id is not None:
+            book_id = _parse_identifier(payload.book_id, field="book_id")
+        try:
+            session_obj = repo.create(title=title, book_id=book_id)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        db_session.refresh(session_obj)
+        return {"session": _serialize_session(session_obj, db_session)}
+
+
+@_get("/sessions/{session_id}/messages")
+def session_messages(
+    session_id: str,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    session_pk = _parse_identifier(session_id, field="session_id")
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        session_repo = repositories.SessionRepository(db_session, owner.id)
+        session_obj = session_repo.get(session_pk)
+        if session_obj is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        message_repo = repositories.MessageRepository(db_session, owner.id)
+        records = message_repo.list_for_session(session_obj.id)
+        payload = [_serialize_message(message) for message in records]
+        return {"messages": payload}
+
+
+@_post("/sessions/{session_id}/messages")
+def create_session_message(
+    session_id: str,
+    payload: MessageCreate,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    session_pk = _parse_identifier(session_id, field="session_id")
+    role = (payload.role or "").strip().lower()
+    if role not in {"assistant", "user", "system"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid message role")
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        session_repo = repositories.SessionRepository(db_session, owner.id)
+        session_obj = session_repo.get(session_pk)
+        if session_obj is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        message_repo = repositories.MessageRepository(db_session, owner.id)
+        message = message_repo.create(
+            session_id=session_obj.id,
+            role=role,
+            content=payload.content,
+            citations=payload.citations,
+            meta=payload.meta,
+        )
+        db_session.refresh(message)
+        return {"message": _serialize_message(message)}
 
 
 @_get("/metrics")
 def metrics() -> Response:
     payload = generate_latest().decode("utf-8")
-    return Response(payload, headers={"content-type": CONTENT_TYPE_LATEST})
+    return Response(
+        payload,
+        headers={
+            "content-type": CONTENT_TYPE_LATEST,
+            "content-encoding": "identity",
+        },
+    )

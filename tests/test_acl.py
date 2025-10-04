@@ -107,22 +107,39 @@ def test_bookmarks_filter_by_owner(
     db_session: Session, owners: tuple[models.User, models.User]
 ) -> None:
     owner_one, owner_two = owners
-    book_repo_one = repositories.BookRepository(db_session, owner_one.id)
-    book_repo_two = repositories.BookRepository(db_session, owner_two.id)
     bookmark_repo_one = repositories.BookmarkRepository(db_session, owner_one.id)
     bookmark_repo_two = repositories.BookmarkRepository(db_session, owner_two.id)
+    sessions_one = repositories.SessionRepository(db_session, owner_one.id)
+    sessions_two = repositories.SessionRepository(db_session, owner_two.id)
+    session_one = sessions_one.create(title="Session One")
+    session_two = sessions_two.create(title="Session Two")
 
-    book_one = book_repo_one.create(title="Owner 1 Book")
-    book_two = book_repo_two.create(title="Owner 2 Book")
+    message_repo_one = repositories.MessageRepository(db_session, owner_one.id)
+    message_repo_two = repositories.MessageRepository(db_session, owner_two.id)
+    assistant_one = message_repo_one.create(
+        session_id=session_one.id, role="assistant", content="Response one"
+    )
+    assistant_two = message_repo_two.create(
+        session_id=session_two.id, role="assistant", content="Response two"
+    )
 
-    bookmark_repo_one.create(book_id=book_one.id, page=3)
-    bookmark_repo_two.create(book_id=book_two.id, page=5)
+    bookmark_one = bookmark_repo_one.create(message_id=assistant_one.id)
+    bookmark_repo_two.create(message_id=assistant_two.id)
 
     with pytest.raises(ValueError):
-        bookmark_repo_one.create(book_id=book_two.id, page=1)
+        bookmark_repo_one.create(message_id=assistant_two.id)
 
-    assert [b.page for b in bookmark_repo_one.list_for_book(book_one.id)] == [3]
-    assert bookmark_repo_one.list_for_book(book_two.id) == []
+    user_message = message_repo_one.create(
+        session_id=session_one.id, role="user", content="Hello"
+    )
+    with pytest.raises(ValueError):
+        bookmark_repo_one.create(message_id=user_message.id)
+
+    assert [b.message_id for b in bookmark_repo_one.list()] == [assistant_one.id]
+    assert [b.message_id for b in bookmark_repo_two.list()] == [assistant_two.id]
+    assert bookmark_repo_one.delete(9999) is False
+    assert bookmark_repo_one.delete(bookmark_one.id) is True
+    assert bookmark_repo_one.list() == []
 
 
 def test_messages_filter_by_owner(

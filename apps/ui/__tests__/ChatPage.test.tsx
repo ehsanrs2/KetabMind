@@ -81,11 +81,17 @@ describe('ChatPage', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const stream = createStreamController();
     const postBodies: Array<string | undefined> = [];
+    let assistantMessageIdCounter = 0;
+    let bookmarkIdCounter = 0;
 
     const fetchMock = jest.spyOn(globalThis, 'fetch');
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url;
       const method = init?.method ?? 'GET';
+
+      if (url === '/bookmarks' && method === 'GET') {
+        return Promise.resolve(createJsonResponse({ bookmarks: [] }));
+      }
 
       if (url === '/sessions' && method === 'GET') {
         return Promise.resolve(
@@ -107,7 +113,53 @@ describe('ChatPage', () => {
 
       if (url === '/sessions/1/messages' && method === 'POST') {
         postBodies.push(typeof init?.body === 'string' ? init?.body : undefined);
-        return Promise.resolve(createJsonResponse({}));
+        const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+        const role = payload?.role;
+        if (role === 'assistant') {
+          assistantMessageIdCounter += 1;
+          return Promise.resolve(
+            createJsonResponse({
+              message: {
+                id: `assistant-${assistantMessageIdCounter}`,
+                role: 'assistant',
+                content: payload?.content,
+                created_at: '2024-01-01T01:05:00Z',
+              },
+            }),
+          );
+        }
+        return Promise.resolve(
+          createJsonResponse({
+            message: {
+              id: `user-${postBodies.length}`,
+              role: role ?? 'user',
+              content: payload?.content,
+              created_at: '2024-01-01T01:00:00Z',
+            },
+          }),
+        );
+      }
+
+      if (url === '/bookmarks' && method === 'POST') {
+        const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+        bookmarkIdCounter += 1;
+        return Promise.resolve(
+          createJsonResponse({
+            bookmark: {
+              id: bookmarkIdCounter,
+              session_id: 1,
+              created_at: '2024-01-01T02:00:00Z',
+              session: { id: 1, title: 'Mock Session' },
+              message: {
+                id: body.message_id,
+                role: 'assistant',
+                content: 'Partial answer with citation',
+                citations: ['[book1:12-14]'],
+                created_at: '2024-01-01T01:05:00Z',
+              },
+            },
+          }),
+        );
       }
 
       if (url === '/sessions' && method === 'POST') {
@@ -163,6 +215,38 @@ describe('ChatPage', () => {
     await waitFor(() => {
       const assistant = assistMessages().at(-1);
       expect(assistant).toHaveTextContent('Partial answer with citation');
+    });
+
+    const assistant = assistMessages().at(-1) as HTMLElement;
+    const assistantScrollSpy = jest.fn();
+    assistant.scrollIntoView = assistantScrollSpy;
+
+    const bookmarkButton = await screen.findByRole('button', { name: 'Bookmark' });
+
+    await act(async () => {
+      await user.click(bookmarkButton);
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/bookmarks',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('assistant-'),
+        }),
+      );
+      expect(screen.getByRole('button', { name: 'Bookmarked' })).toBeDisabled();
+    });
+
+    const bookmarkItem = await screen.findByTestId('bookmark-item-1');
+    expect(bookmarkItem).toBeInTheDocument();
+
+    await act(async () => {
+      await user.click(bookmarkItem);
+    });
+
+    await waitFor(() => {
+      expect(assistantScrollSpy).toHaveBeenCalled();
     });
 
     const citationLink = await screen.findByRole('link', { name: '[book1:12-14]' });

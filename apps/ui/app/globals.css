@@ -173,7 +173,7 @@ body.rtl .navbar__dropdown-item {
 .chat-layout {
   display: flex;
   gap: 1.5rem;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .chat-sessions {
@@ -204,6 +204,116 @@ body.rtl .navbar__dropdown-item {
   gap: 0.5rem;
   max-height: 70vh;
   overflow-y: auto;
+}
+
+.chat-bookmarks {
+  width: 260px;
+  flex: 0 0 auto;
+  background: #ffffff;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chat-bookmarks__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-bookmarks__error {
+  padding: 0.75rem 1rem;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  border-radius: 0.75rem;
+  font-weight: 600;
+}
+
+.chat-bookmark-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.chat-bookmark {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.chat-bookmark__item {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-bookmark__open {
+  flex: 1 1 auto;
+  text-align: left;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.chat-bookmark__open:hover,
+.chat-bookmark__open:focus-visible {
+  border-color: #93c5fd;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.15);
+  outline: none;
+}
+
+.chat-bookmark--active .chat-bookmark__open {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.chat-bookmark__session {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.chat-bookmark__preview {
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.chat-bookmark__timestamp {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.chat-bookmark__remove {
+  flex: 0 0 auto;
+  align-self: center;
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.chat-bookmark__remove:hover,
+.chat-bookmark__remove:focus-visible {
+  background: rgba(239, 68, 68, 0.1);
+  outline: none;
 }
 
 .chat-session-item {
@@ -285,6 +395,18 @@ body.rtl .navbar__dropdown-item {
   gap: 0.5rem;
 }
 
+.chat-message__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.chat-message__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .chat-message--assistant {
   border-left: 4px solid #2563eb;
 }
@@ -294,9 +416,37 @@ body.rtl .navbar__dropdown-item {
   background: #ecfeff;
 }
 
+.chat-message--highlight {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
 .chat-message__role {
   font-weight: 700;
   color: #111827;
+}
+
+.chat-bookmark-button {
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.6rem;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.chat-bookmark-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.chat-bookmark-button:hover:not(:disabled),
+.chat-bookmark-button:focus-visible:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  outline: none;
 }
 
 .chat-message__content {
@@ -410,6 +560,11 @@ body.rtl .navbar__dropdown-item {
   }
 
   .chat-sessions {
+    width: 100%;
+    max-height: none;
+  }
+
+  .chat-bookmarks {
     width: 100%;
     max-height: none;
   }
