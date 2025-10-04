@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useCallback, useMemo, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 
 type UploadResponse = {
   book_id?: string;
@@ -79,6 +80,7 @@ function isAlreadyIndexed(payload: UploadResponse | null): boolean {
 }
 
 export default function UploadPage() {
+  const { csrfToken } = useAuth();
   const [formValues, setFormValues] = useState(INITIAL_FORM);
   const [file, setFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -125,6 +127,11 @@ export default function UploadPage() {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload');
         xhr.responseType = 'json';
+        xhr.withCredentials = true;
+
+        if (csrfToken) {
+          xhr.setRequestHeader('x-csrf-token', csrfToken);
+        }
 
         xhr.upload.onprogress = (progressEvent) => {
           if (progressEvent.lengthComputable) {
@@ -188,7 +195,9 @@ export default function UploadPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
         },
+        credentials: 'include',
         body: JSON.stringify({
           book_id: uploadResponse.book_id,
           version: uploadResponse.version,
