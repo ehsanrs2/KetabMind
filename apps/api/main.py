@@ -561,6 +561,13 @@ def ready() -> dict[str, str]:
     return {"status": "ready"}
 
 
+def _csrf_headers(request: Request) -> dict[str, str]:
+    token = request.cookies.get("access_token") if hasattr(request, "cookies") else None
+    if isinstance(token, str) and token:
+        return {"x-csrf-token": token}
+    return {}
+
+
 @_post("/auth/login")
 def login(req: LoginRequest) -> JSONResponse:
     record = authenticate_user(req.email, req.password)
@@ -575,6 +582,19 @@ def login(req: LoginRequest) -> JSONResponse:
         "x-csrf-token": token,
     }
     return JSONResponse({"user": profile}, headers=headers)
+
+
+@_get("/me")
+def me(request: Request, current_user: Annotated[dict[str, Any], Depends(get_current_user)]) -> JSONResponse:
+    headers = _csrf_headers(request)
+    return JSONResponse(current_user, headers=headers)
+
+
+@_post("/auth/logout")
+def logout() -> JSONResponse:
+    response = JSONResponse({"status": "ok"}, headers={"x-csrf-token": ""})
+    response.delete_cookie("access_token", path="/")
+    return response
 
 
 @_post("/query")

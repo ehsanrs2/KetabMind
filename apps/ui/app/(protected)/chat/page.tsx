@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { useRTL } from '../../hooks/useRTL';
 
 type SessionSummary = {
@@ -380,6 +381,7 @@ function normaliseBookmark(item: BookmarksResponse['bookmarks'][number]): Bookma
 }
 
 export default function ChatPage() {
+  const { csrfToken } = useAuth();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -416,6 +418,9 @@ export default function ChatPage() {
       },
     [],
   );
+
+  const csrfHeaders = useMemo(() => (csrfToken ? { 'x-csrf-token': csrfToken } : {}), [csrfToken]);
+  const hasCsrfToken = useMemo(() => Object.keys(csrfHeaders).length > 0, [csrfHeaders]);
 
   const loadBookmarks = useCallback(async () => {
     try {
@@ -582,6 +587,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...csrfHeaders,
         },
         credentials: 'include',
         body: JSON.stringify(payload),
@@ -610,7 +616,7 @@ export default function ChatPage() {
     } catch (err) {
       console.warn('Failed to persist message', err);
     }
-  }, []);
+  }, [csrfHeaders]);
 
   const handleCreateBookmark = useCallback(
     async (message: ChatMessage) => {
@@ -621,6 +627,7 @@ export default function ChatPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...csrfHeaders,
           },
           credentials: 'include',
           body: JSON.stringify({ message_id: message.id }),
@@ -647,7 +654,7 @@ export default function ChatPage() {
         setPendingBookmarkId(null);
       }
     },
-    [loadBookmarks],
+    [csrfHeaders, loadBookmarks],
   );
 
   const handleDeleteBookmark = useCallback(
@@ -655,6 +662,7 @@ export default function ChatPage() {
       try {
         const response = await fetch(`/bookmarks/${bookmarkId}`, {
           method: 'DELETE',
+          headers: hasCsrfToken ? csrfHeaders : undefined,
           credentials: 'include',
         });
         if (!response.ok && response.status !== 204) {
@@ -679,7 +687,7 @@ export default function ChatPage() {
         setBookmarkError('Unable to remove bookmark.');
       }
     },
-    [activeBookmarkMessageId],
+    [activeBookmarkMessageId, csrfHeaders, hasCsrfToken],
   );
 
   const handleBookmarkClick = useCallback(
@@ -710,6 +718,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...csrfHeaders,
         },
         credentials: 'include',
         body: JSON.stringify({ title: 'New session' }),
@@ -734,7 +743,7 @@ export default function ChatPage() {
       console.warn('Failed to create session', err);
       setError('Unable to create a new session.');
     }
-  }, [isStreaming, loadSessions]);
+  }, [csrfHeaders, isStreaming, loadSessions]);
 
   const handleSelectSession = useCallback(
     (sessionId: string) => {
@@ -805,6 +814,7 @@ export default function ChatPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...csrfHeaders,
           },
           credentials: 'include',
           body: JSON.stringify({ q: trimmedPrompt }),
@@ -942,7 +952,7 @@ export default function ChatPage() {
         setIsStreaming(false);
       }
     },
-    [debugEnabled, isStreaming, loadSessions, persistMessage, prompt, selectedSessionId],
+    [csrfHeaders, debugEnabled, isStreaming, loadSessions, persistMessage, prompt, selectedSessionId],
   );
 
   return (
