@@ -46,6 +46,7 @@ from apps.api.schemas import (
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
+from core.fts import get_backend as get_fts_backend
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -649,6 +650,45 @@ def logout() -> JSONResponse:
     response = JSONResponse({"status": "ok"}, headers={"x-csrf-token": ""})
     response.delete_cookie("access_token", path="/")
     return response
+
+
+@_get("/search")
+def search_pages(
+    query: Annotated[str, Query(..., min_length=1)],
+    book_id: Annotated[str | None, Query(None)] = None,
+    limit: Annotated[int | None, Query(None, ge=1, le=100)] = None,
+    _user: Annotated[dict[str, Any], Depends(get_current_user)] | None = None,
+) -> dict[str, Any]:
+    backend = get_fts_backend()
+    if not backend.is_available():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Full-text search backend not configured",
+        )
+    page_limit = int(limit) if limit is not None else settings.fts_page_limit
+    try:
+        matches = backend.search(
+            query,
+            book_id=book_id,
+            limit=max(1, page_limit),
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log.warning("search.fts_failed", error=str(exc), exc_info=True)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Search backend failure",
+        ) from exc
+
+    results = [
+        {
+            "book_id": match.book_id,
+            "page_num": match.page_num,
+            "text": match.text,
+            "score": match.score,
+        }
+        for match in matches
+    ]
+    return {"results": results}
 
 
 @_post("/query")
