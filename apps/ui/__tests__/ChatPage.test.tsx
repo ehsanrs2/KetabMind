@@ -1,0 +1,184 @@
+import 'whatwg-fetch';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'util';
+import ChatPage from '../app/(protected)/chat/page';
+
+if (typeof globalThis.TextDecoder === 'undefined') {
+  globalThis.TextDecoder = NodeTextDecoder as unknown as typeof globalThis.TextDecoder;
+}
+
+type StreamController = {
+  push(chunk: Record<string, unknown>): void;
+  close(): void;
+  response: Response;
+};
+
+function createStreamController(): StreamController {
+  const encoder = new NodeTextEncoder();
+  const queue: Uint8Array[] = [];
+  let closed = false;
+  const pending: Array<(value: ReadableStreamReadResult<Uint8Array>) => void> = [];
+
+  const flush = () => {
+    while (pending.length > 0) {
+      if (queue.length > 0) {
+        const value = queue.shift()!;
+        const resolve = pending.shift()!;
+        resolve({ done: false, value });
+      } else if (closed) {
+        const resolve = pending.shift()!;
+        resolve({ done: true, value: undefined });
+      } else {
+        break;
+      }
+    }
+  };
+
+  const body = {
+    getReader() {
+      return {
+        read() {
+          return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {
+            pending.push(resolve);
+            flush();
+          });
+        },
+      };
+    },
+  };
+
+  return {
+    push(chunk: Record<string, unknown>) {
+      queue.push(encoder.encode(`${JSON.stringify(chunk)}\n`));
+      flush();
+    },
+    close() {
+      closed = true;
+      flush();
+    },
+    response: {
+      ok: true,
+      body,
+    } as unknown as Response,
+  };
+}
+
+describe('ChatPage', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function createJsonResponse(payload: unknown, init?: ResponseInit) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      ...init,
+    });
+  }
+
+  it('streams assistant tokens and renders citations as links', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const stream = createStreamController();
+    const postBodies: Array<string | undefined> = [];
+
+    const fetchMock = jest.spyOn(globalThis, 'fetch');
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url;
+      const method = init?.method ?? 'GET';
+
+      if (url === '/sessions' && method === 'GET') {
+        return Promise.resolve(
+          createJsonResponse({
+            sessions: [
+              {
+                id: '1',
+                title: 'Mock Session',
+                last_activity: '2024-01-01T00:00:00Z',
+              },
+            ],
+          }),
+        );
+      }
+
+      if (url === '/sessions/1/messages' && method === 'GET') {
+        return Promise.resolve(createJsonResponse({ messages: [] }));
+      }
+
+      if (url === '/sessions/1/messages' && method === 'POST') {
+        postBodies.push(typeof init?.body === 'string' ? init?.body : undefined);
+        return Promise.resolve(createJsonResponse({}));
+      }
+
+      if (url === '/sessions' && method === 'POST') {
+        return Promise.resolve(createJsonResponse({ id: '2', title: 'New Session' }));
+      }
+
+      if (url.startsWith('/query')) {
+        return Promise.resolve(stream.response);
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+    });
+
+    render(<ChatPage />);
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Mock Session' })).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    const textarea = screen.getByLabelText('Message') as HTMLTextAreaElement;
+    await act(async () => {
+      await user.type(textarea, 'Where is the library?');
+    });
+
+    const sendButton = screen.getByRole('button', { name: 'Send' });
+    await act(async () => {
+      await user.click(sendButton);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/sessions/1/messages'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+
+    const assistMessages = () => screen.getAllByTestId('chat-message-assistant');
+
+    await act(async () => {
+      stream.push({ delta: 'Partial answer ' });
+    });
+
+    await waitFor(() => {
+      const assistant = assistMessages().at(-1);
+      expect(assistant).toHaveTextContent('Partial answer');
+    });
+
+    await act(async () => {
+      stream.push({
+        answer: 'Partial answer with citation',
+        contexts: [{ book_id: 'book1', page_start: 12, page_end: 14 }],
+      });
+      stream.close();
+    });
+
+    await waitFor(() => {
+      const assistant = assistMessages().at(-1);
+      expect(assistant).toHaveTextContent('Partial answer with citation');
+    });
+
+    const citationLink = await screen.findByRole('link', { name: '[book1:12-14]' });
+    expect(citationLink).toHaveAttribute('href', '/viewer?book=book1#page=12');
+
+    await waitFor(() => {
+      const assistantPersistCall = postBodies
+        .map((body) => (body ? JSON.parse(body) : null))
+        .find((payload) => payload?.role === 'assistant');
+      expect(assistantPersistCall).toMatchObject({
+        role: 'assistant',
+        content: 'Partial answer with citation',
+        citations: ['[book1:12-14]'],
+      });
+    });
+
+    warnSpy.mockRestore();
+  });
+});
