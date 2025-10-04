@@ -19,9 +19,14 @@ export default function RootLayout({
 }: {
   children: ReactNode;
 }) {
+  const themeDefault = (() => {
+    const raw = (process.env.NEXT_PUBLIC_THEME_DEFAULT ?? process.env.THEME_DEFAULT ?? 'light').toString();
+    const normalised = raw.toLowerCase();
+    return normalised === 'dark' || normalised === 'light' ? normalised : 'light';
+  })();
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${vazirmatn.variable} font-sans`}>
+      <body className={`${vazirmatn.variable} font-sans`} data-theme={themeDefault}>
         <Providers>
           <Navbar />
           <main className="container">{children}</main>

@@ -2,6 +2,10 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import UploadPage from '../app/(protected)/upload/page';
 
+jest.mock('../app/context/AuthContext', () => ({
+  useAuth: () => ({ csrfToken: 'csrf-token' }),
+}));
+
 type ProgressHandler = ((event: ProgressEvent<EventTarget>) => void) | null;
 
 type FormInput = {

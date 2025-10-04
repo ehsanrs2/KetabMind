@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useRTL } from '../../hooks/useRTL';
 
@@ -318,6 +319,41 @@ function renderMessageContent(content: string) {
   });
 }
 
+function normaliseMetricValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const containsPercent = trimmed.includes('%');
+    const parsed = Number.parseFloat(trimmed.replace(/%/g, ''));
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return containsPercent ? parsed / 100 : parsed;
+  }
+  return null;
+}
+
+function formatMetricPercentage(value: number): string {
+  const scaled = value <= 1 ? value * 100 : value;
+  const clamped = Math.min(100, Math.max(0, scaled));
+  return `${Math.round(clamped)}%`;
+}
+
+function readMetric(
+  meta: Record<string, unknown> | null | undefined,
+  key: 'coverage' | 'confidence',
+): number | null {
+  if (!meta || typeof meta !== 'object') {
+    return null;
+  }
+  return normaliseMetricValue((meta as Record<string, unknown>)[key]);
+}
+
 function formatLastActivity(timestamp: string | null | undefined): string {
   if (!timestamp) {
     return 'No activity yet';
@@ -409,7 +445,7 @@ export default function ChatPage() {
   const [activeBookmarkMessageId, setActiveBookmarkMessageId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useRTL(language);
 
@@ -485,7 +521,7 @@ export default function ChatPage() {
 
   const registerMessageRef = useCallback(
     (messageId: string) =>
-      (element: HTMLElement | null) => {
+      (element: HTMLDivElement | null) => {
         if (!element) {
           messageRefs.current.delete(messageId);
         } else {
@@ -1197,73 +1233,113 @@ export default function ChatPage() {
         {error ? <div className="chat-error" role="alert">{error}</div> : null}
 
         <div className="chat-messages" aria-live="polite">
-          {isLoadingMessages ? <p className="chat-status">Loading messages…</p> : null}
-          {messages.map((message) => {
-            const citations = message.citations ?? [];
-            const isBookmarked = bookmarkedMessageIds.has(message.id);
-            const isBookmarking = pendingBookmarkId === message.id;
-            const isHighlighted = activeBookmarkMessageId === message.id;
-            const messageLang = (message.meta?.lang as string | undefined) ?? null;
-            const isRTLMessage = (messageLang ?? '').toLowerCase() === 'fa';
-            return (
-              <article
-                key={message.id}
-                ref={registerMessageRef(message.id)}
-                className={`chat-message chat-message--${message.role}${
-                  isHighlighted ? ' chat-message--highlight' : ''
-                }${isRTLMessage ? ' rtl' : ''}`}
-                data-testid={`chat-message-${message.role}`}
-              >
-                <header className="chat-message__header">
-                  <span className="chat-message__role">
-                    {message.role === 'assistant' ? 'Assistant' : message.role === 'user' ? 'You' : 'System'}
-                  </span>
-                  {message.role === 'assistant' ? (
-                    <div className="chat-message__actions">
-                      <button
-                        type="button"
-                        className="chat-bookmark-button"
-                        onClick={() => handleCreateBookmark(message)}
-                        disabled={isBookmarked || isBookmarking}
-                        aria-pressed={isBookmarked}
-                      >
-                        {isBookmarked ? 'Bookmarked' : isBookmarking ? 'Bookmarking…' : 'Bookmark'}
-                      </button>
-                      <div className="chat-export-buttons">
+          {isLoadingMessages ? (
+            <div className="chat-message-skeleton__container" aria-hidden="true">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div className="chat-message-skeleton" key={`message-skeleton-${index}`}>
+                  <div className="chat-message-skeleton__header">
+                    <span className="skeleton skeleton-line skeleton-line--sm" />
+                    <span className="skeleton skeleton-line skeleton-line--md" />
+                  </div>
+                  <div className="chat-message-skeleton__line-group">
+                    <span className="skeleton skeleton-line skeleton-line--lg" />
+                    <span className="skeleton skeleton-line skeleton-line--lg" />
+                    <span className="skeleton skeleton-line skeleton-line--md" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <AnimatePresence initial={false}>
+            {messages.map((message) => {
+              const citations = message.citations ?? [];
+              const isBookmarked = bookmarkedMessageIds.has(message.id);
+              const isBookmarking = pendingBookmarkId === message.id;
+              const isHighlighted = activeBookmarkMessageId === message.id;
+              const messageLang = (message.meta?.lang as string | undefined) ?? null;
+              const isRTLMessage = (messageLang ?? '').toLowerCase() === 'fa';
+              const coverageValue = readMetric(message.meta ?? undefined, 'coverage');
+              const confidenceValue = readMetric(message.meta ?? undefined, 'confidence');
+              const hasMetrics = coverageValue !== null || confidenceValue !== null;
+              return (
+                <motion.article
+                  key={message.id}
+                  ref={registerMessageRef(message.id)}
+                  className={`chat-message chat-message--${message.role}${
+                    isHighlighted ? ' chat-message--highlight' : ''
+                  }${isRTLMessage ? ' rtl' : ''}`}
+                  data-testid={`chat-message-${message.role}`}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -16 }}
+                  transition={{ type: 'spring', stiffness: 220, damping: 24, mass: 0.9 }}
+                  layout
+                >
+                  <header className="chat-message__header">
+                    <span className="chat-message__role">
+                      {message.role === 'assistant' ? 'Assistant' : message.role === 'user' ? 'You' : 'System'}
+                    </span>
+                    {message.role === 'assistant' ? (
+                      <div className="chat-message__actions">
                         <button
                           type="button"
-                          className="chat-export-button"
-                          onClick={() => handleExportAnswer(message, 'pdf')}
+                          className="chat-bookmark-button"
+                          onClick={() => handleCreateBookmark(message)}
+                          disabled={isBookmarked || isBookmarking}
+                          aria-pressed={isBookmarked}
                         >
-                          Export PDF
+                          {isBookmarked ? 'Bookmarked' : isBookmarking ? 'Bookmarking…' : 'Bookmark'}
                         </button>
-                        <button
-                          type="button"
-                          className="chat-export-button"
-                          onClick={() => handleExportAnswer(message, 'word')}
-                        >
-                          Export Word
-                        </button>
+                        <div className="chat-export-buttons">
+                          <button
+                            type="button"
+                            className="chat-export-button"
+                            onClick={() => handleExportAnswer(message, 'pdf')}
+                          >
+                            Export PDF
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-export-button"
+                            onClick={() => handleExportAnswer(message, 'word')}
+                          >
+                            Export Word
+                          </button>
+                        </div>
                       </div>
+                    ) : null}
+                  </header>
+                  <div className="chat-message__content">{renderMessageContent(message.content)}</div>
+                  {hasMetrics ? (
+                    <div className="chat-message__metrics">
+                      {coverageValue !== null ? (
+                        <span data-testid={`chat-message-coverage-${message.id}`}>
+                          Coverage: {formatMetricPercentage(coverageValue)}
+                        </span>
+                      ) : null}
+                      {confidenceValue !== null ? (
+                        <span data-testid={`chat-message-confidence-${message.id}`}>
+                          Confidence: {formatMetricPercentage(confidenceValue)}
+                        </span>
+                      ) : null}
                     </div>
                   ) : null}
-                </header>
-                <div className="chat-message__content">{renderMessageContent(message.content)}</div>
-                {citations.length > 0 ? (
-                  <div className="chat-message__citations">
-                    {citations.map((citation) => (
-                      <a key={citation.label} href={citation.href} className="chat-citation" rel="noreferrer">
-                        {citation.label}
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
-                {debugEnabled && message.debug ? (
-                  <pre className="chat-debug-panel">{JSON.stringify(message.debug, null, 2)}</pre>
-                ) : null}
-              </article>
-            );
-          })}
+                  {citations.length > 0 ? (
+                    <div className="chat-message__citations">
+                      {citations.map((citation) => (
+                        <a key={citation.label} href={citation.href} className="chat-citation" rel="noreferrer">
+                          {citation.label}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                  {debugEnabled && message.debug ? (
+                    <pre className="chat-debug-panel">{JSON.stringify(message.debug, null, 2)}</pre>
+                  ) : null}
+                </motion.article>
+              );
+            })}
+          </AnimatePresence>
           <div ref={bottomRef} />
         </div>
 

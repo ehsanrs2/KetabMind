@@ -11,16 +11,17 @@
   "dependencies": {
     "@react-pdf-viewer/core": "3.12.0",
     "@react-pdf-viewer/page-navigation": "3.12.0",
+    "framer-motion": "^11.0.14",
     "next": "14.2.4",
     "pdfjs-dist": "3.11.174",
     "react": "18.2.0",
     "react-dom": "18.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.47.2",
     "@testing-library/jest-dom": "6.4.2",
     "@testing-library/react": "14.2.1",
     "@testing-library/user-event": "14.5.2",
-    "@playwright/test": "1.47.2",
     "@types/jest": "29.5.12",
     "@types/node": "20.11.30",
     "@types/react": "18.2.46",

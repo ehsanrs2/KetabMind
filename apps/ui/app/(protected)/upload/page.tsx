@@ -1,5 +1,6 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { ChangeEvent, FormEvent, useCallback, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -231,6 +232,12 @@ export default function UploadPage() {
     }
   }, [uploadResponse]);
 
+  const clampedProgress = progress === null ? 0 : Math.min(100, Math.max(0, progress));
+  const progressFillStyle = useMemo(
+    () => ({ '--progress': `${clampedProgress}%` }) as CSSProperties,
+    [clampedProgress],
+  );
+
   const bookId = useMemo(() => uploadResponse?.book_id ?? '—', [uploadResponse]);
   const version = useMemo(() => (uploadResponse?.version ?? '—').toString(), [uploadResponse]);
   const fileHash = useMemo(() => uploadResponse?.file_hash ?? '—', [uploadResponse]);
@@ -303,11 +310,20 @@ export default function UploadPage() {
         </button>
       </form>
 
-      {progress !== null && (
-        <p aria-live="polite" className="mt-2">
-          Upload progress: {progress}%
-        </p>
-      )}
+      {isUploading ? (
+        <div className="upload-progress" aria-live="polite">
+          <span className="upload-progress__label">Upload progress: {clampedProgress}%</span>
+          <div
+            className="upload-progress__bar skeleton"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={clampedProgress}
+          >
+            <div className="upload-progress__fill" style={progressFillStyle} />
+          </div>
+        </div>
+      ) : null}
 
       {status.message && (
         <p
