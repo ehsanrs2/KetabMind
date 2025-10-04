@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import select
@@ -134,30 +135,53 @@ class SessionRepository(_BaseRepository):
 class BookmarkRepository(_BaseRepository):
     model = models.Bookmark
 
-    def list_for_book(self, book_id: int) -> list[models.Bookmark]:
+    def list(self) -> list[models.Bookmark]:
         stmt = (
             select(models.Bookmark)
-            .where(
-                models.Bookmark.owner_id == self.owner_id,
-                models.Bookmark.book_id == book_id,
-            )
-            .order_by(models.Bookmark.page)
+            .where(models.Bookmark.owner_id == self.owner_id)
+            .order_by(models.Bookmark.created_at.desc())
         )
         return self._all(stmt)
 
-    def create(self, *, book_id: int, page: int, note: str | None = None) -> models.Bookmark:
-        book = BookRepository(self.session, self.owner_id).get(book_id)
-        if book is None:
-            raise ValueError("Book not found or not owned by this user")
+    def get(self, bookmark_id: int) -> models.Bookmark | None:
+        stmt = select(models.Bookmark).where(
+            models.Bookmark.id == bookmark_id,
+            models.Bookmark.owner_id == self.owner_id,
+        )
+        return self._one(stmt)
+
+    def create(self, *, message_id: int) -> models.Bookmark:
+        message_stmt = select(models.Message).where(
+            models.Message.id == message_id,
+            models.Message.owner_id == self.owner_id,
+        )
+        message = self.session.scalar(message_stmt)
+        if message is None:
+            raise ValueError("Message not found or not owned by this user")
+        if message.role != "assistant":
+            raise ValueError("Only assistant messages can be bookmarked")
+        existing_stmt = select(models.Bookmark).where(
+            models.Bookmark.message_id == message.id,
+            models.Bookmark.owner_id == self.owner_id,
+        )
+        existing = self.session.scalar(existing_stmt)
+        if existing is not None:
+            return existing
         bookmark = models.Bookmark(
-            book_id=book.id,
-            page=page,
-            note=note,
+            session_id=message.session_id,
+            message_id=message.id,
             owner_id=self.owner_id,
         )
         self.session.add(bookmark)
         self.session.flush()
         return bookmark
+
+    def delete(self, bookmark_id: int) -> bool:
+        bookmark = self.get(bookmark_id)
+        if bookmark is None:
+            return False
+        self.session.delete(bookmark)
+        return True
 
 
 class MessageRepository(_BaseRepository):
@@ -174,7 +198,15 @@ class MessageRepository(_BaseRepository):
         )
         return self._all(stmt)
 
-    def create(self, *, session_id: int, role: str, content: str) -> models.Message:
+    def create(
+        self,
+        *,
+        session_id: int,
+        role: str,
+        content: str,
+        citations: list[str] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> models.Message:
         session_repo = SessionRepository(self.session, self.owner_id)
         session_obj = session_repo.get(session_id)
         if session_obj is None:
@@ -183,6 +215,8 @@ class MessageRepository(_BaseRepository):
             session_id=session_obj.id,
             role=role,
             content=content,
+            citations=json.dumps(citations) if citations else None,
+            meta=json.dumps(meta) if meta else None,
             owner_id=self.owner_id,
         )
         self.session.add(message)

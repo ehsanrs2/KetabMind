@@ -55,9 +55,6 @@ class Book(TimestampMixin, Base):
     sessions: Mapped[list[Session]] = relationship(
         back_populates="book", cascade="all, delete-orphan"
     )
-    bookmarks: Mapped[list[Bookmark]] = relationship(
-        back_populates="book", cascade="all, delete-orphan"
-    )
 
 
 class BookVersion(TimestampMixin, Base):
@@ -98,6 +95,9 @@ class Session(TimestampMixin, Base):
     messages: Mapped[list[Message]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
+    bookmarks: Mapped[list[Bookmark]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
 
 
 class Bookmark(TimestampMixin, Base):
@@ -106,17 +106,19 @@ class Bookmark(TimestampMixin, Base):
     __tablename__ = "bookmarks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    book_id: Mapped[int] = mapped_column(
-        ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    page: Mapped[int] = mapped_column(Integer, nullable=False)
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     owner: Mapped[User] = relationship(back_populates="bookmarks")
-    book: Mapped[Book] = relationship(back_populates="bookmarks")
+    session: Mapped[Session] = relationship(back_populates="bookmarks")
+    message: Mapped[Message] = relationship(back_populates="bookmark")
 
 
 class Message(TimestampMixin, Base):
@@ -130,12 +132,17 @@ class Message(TimestampMixin, Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    citations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     owner: Mapped[User] = relationship(back_populates="messages")
     session: Mapped[Session] = relationship(back_populates="messages")
+    bookmark: Mapped[Bookmark | None] = relationship(
+        back_populates="message", cascade="all, delete-orphan", uselist=False
+    )
 
 
 __all__ = [

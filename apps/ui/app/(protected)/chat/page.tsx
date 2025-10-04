@@ -54,6 +54,35 @@ type MessagesResponse = {
   }>;
 };
 
+type BookmarksResponse = {
+  bookmarks?: Array<{
+    id?: string | number;
+    session_id?: string | number;
+    created_at?: string | null;
+    session?: {
+      id?: string | number;
+      title?: string | null;
+      updated_at?: string | null;
+    };
+    message?: {
+      id?: string | number;
+      role?: string;
+      content?: string;
+      citations?: string[];
+      meta?: Record<string, unknown> | null;
+      created_at?: string | null;
+    };
+  }>;
+};
+
+type BookmarkRecord = {
+  id: string;
+  sessionId: string;
+  sessionTitle: string;
+  createdAt?: string | null;
+  message: ChatMessage;
+};
+
 function createMessageId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -177,7 +206,7 @@ function buildCitationLinksFromContexts(
 
   const links: CitationLink[] = [];
 
-  for (const [bookId, spans] of spansByBook.entries()) {
+  spansByBook.forEach((spans, bookId) => {
     const merged = mergeRanges(spans);
     for (const [start, end] of merged) {
       const pageRange = start === end ? `${start}` : `${start}-${end}`;
@@ -185,7 +214,7 @@ function buildCitationLinksFromContexts(
       const href = `/viewer?book=${encodeURIComponent(bookId)}#page=${start}`;
       links.push({ label, href, page: start, bookId });
     }
-  }
+  });
 
   const seen = new Set<string>();
   return links.filter((item) => {
@@ -301,6 +330,55 @@ function formatLastActivity(timestamp: string | null | undefined): string {
   }).format(date);
 }
 
+function truncateText(text: string, maxLength = 160): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function normaliseBookmark(item: BookmarksResponse['bookmarks'][number]): BookmarkRecord | null {
+  if (!item) {
+    return null;
+  }
+
+  const idRaw = item.id ?? item.session_id ?? item.message?.id;
+  const sessionIdRaw = item.session_id ?? item.session?.id;
+  const messageRaw = item.message;
+  const messageIdRaw = messageRaw?.id;
+
+  if (idRaw === null || idRaw === undefined) {
+    return null;
+  }
+  if (sessionIdRaw === null || sessionIdRaw === undefined) {
+    return null;
+  }
+  if (messageIdRaw === null || messageIdRaw === undefined) {
+    return null;
+  }
+
+  const roleRaw = typeof messageRaw?.role === 'string' ? messageRaw.role : 'assistant';
+  const role = roleRaw === 'user' || roleRaw === 'system' ? roleRaw : 'assistant';
+  const content = messageRaw?.content ?? '';
+  const citations = buildCitationLinksFromStrings(messageRaw?.citations ?? undefined);
+  const meta = messageRaw?.meta ?? null;
+
+  return {
+    id: String(idRaw),
+    sessionId: String(sessionIdRaw),
+    sessionTitle: item.session?.title ?? 'Untitled session',
+    createdAt: item.created_at ?? null,
+    message: {
+      id: String(messageIdRaw),
+      role,
+      content,
+      citations,
+      meta,
+      createdAt: messageRaw?.created_at ?? null,
+    },
+  } satisfies BookmarkRecord;
+}
+
 export default function ChatPage() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -311,10 +389,57 @@ export default function ChatPage() {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState<'fa' | 'en'>('fa');
+  const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
+  const [bookmarkError, setBookmarkError] = useState<string | null>(null);
+  const [pendingBookmarkId, setPendingBookmarkId] = useState<string | null>(null);
+  const [pendingScrollMessageId, setPendingScrollMessageId] = useState<string | null>(null);
+  const [activeBookmarkMessageId, setActiveBookmarkMessageId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useRTL(language);
+
+  const bookmarkedMessageIds = useMemo(
+    () => new Set(bookmarks.map((bookmark) => bookmark.message.id)),
+    [bookmarks],
+  );
+
+  const registerMessageRef = useCallback(
+    (messageId: string) =>
+      (element: HTMLElement | null) => {
+        if (!element) {
+          messageRefs.current.delete(messageId);
+        } else {
+          messageRefs.current.set(messageId, element);
+        }
+      },
+    [],
+  );
+
+  const loadBookmarks = useCallback(async () => {
+    try {
+      const response = await fetch('/bookmarks', {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load bookmarks');
+      }
+
+      const payload = (await response.json()) as BookmarksResponse;
+      const mapped = (payload.bookmarks ?? [])
+        .map(normaliseBookmark)
+        .filter((item): item is BookmarkRecord => item !== null);
+
+      setBookmarks(mapped);
+      setBookmarkError(null);
+    } catch (err) {
+      console.warn('Failed to load bookmarks', err);
+      setBookmarkError('Unable to load bookmarks.');
+      setBookmarks([]);
+    }
+  }, []);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -401,6 +526,10 @@ export default function ChatPage() {
   }, [loadSessions]);
 
   useEffect(() => {
+    loadBookmarks();
+  }, [loadBookmarks]);
+
+  useEffect(() => {
     if (!selectedSessionId) {
       setMessages([]);
       return;
@@ -417,11 +546,20 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
+    if (pendingScrollMessageId) {
+      const target = messageRefs.current.get(pendingScrollMessageId);
+      if (target && typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setActiveBookmarkMessageId(pendingScrollMessageId);
+        setPendingScrollMessageId(null);
+        return;
+      }
+    }
     const element = bottomRef.current;
     if (element && typeof element.scrollIntoView === 'function') {
       element.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-  }, [messages]);
+  }, [messages, pendingScrollMessageId]);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
@@ -440,7 +578,7 @@ export default function ChatPage() {
       if (message.meta) {
         payload.meta = message.meta;
       }
-      await fetch(`/sessions/${sessionId}/messages`, {
+      const response = await fetch(`/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -448,10 +586,119 @@ export default function ChatPage() {
         credentials: 'include',
         body: JSON.stringify(payload),
       });
+      if (!response.ok) {
+        throw new Error('Failed to persist message');
+      }
+      const body = (await response.json().catch(() => null)) as
+        | { message?: { id?: string | number; created_at?: string | null } }
+        | null;
+      const saved = (body?.message ?? body) as { id?: string | number; created_at?: string | null } | null;
+      if (saved?.id !== undefined) {
+        const savedId = String(saved.id);
+        setMessages((previous) =>
+          previous.map((item) =>
+            item.id === message.id
+              ? {
+                  ...item,
+                  id: savedId,
+                  createdAt: saved.created_at ?? item.createdAt ?? null,
+                }
+              : item,
+          ),
+        );
+      }
     } catch (err) {
       console.warn('Failed to persist message', err);
     }
   }, []);
+
+  const handleCreateBookmark = useCallback(
+    async (message: ChatMessage) => {
+      setBookmarkError(null);
+      setPendingBookmarkId(message.id);
+      try {
+        const response = await fetch('/bookmarks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({ message_id: message.id }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to create bookmark');
+        }
+
+        const payload = (await response.json()) as
+          | { bookmark?: BookmarksResponse['bookmarks'][number] }
+          | null;
+        const normalised = normaliseBookmark(payload?.bookmark ?? (payload as any));
+
+        if (normalised) {
+          setBookmarks((current) => [normalised, ...current.filter((item) => item.id !== normalised.id)]);
+        } else {
+          await loadBookmarks();
+        }
+      } catch (err) {
+        console.warn('Failed to create bookmark', err);
+        setBookmarkError('Unable to create bookmark.');
+      } finally {
+        setPendingBookmarkId(null);
+      }
+    },
+    [loadBookmarks],
+  );
+
+  const handleDeleteBookmark = useCallback(
+    async (bookmarkId: string) => {
+      try {
+        const response = await fetch(`/bookmarks/${bookmarkId}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        if (!response.ok && response.status !== 204) {
+          throw new Error('Failed to delete bookmark');
+        }
+        setBookmarks((current) => {
+          let removedMessageId: string | null = null;
+          const filtered = current.filter((item) => {
+            if (item.id === bookmarkId) {
+              removedMessageId = item.message.id;
+              return false;
+            }
+            return true;
+          });
+          if (removedMessageId && removedMessageId === activeBookmarkMessageId) {
+            setActiveBookmarkMessageId(null);
+          }
+          return filtered;
+        });
+      } catch (err) {
+        console.warn('Failed to delete bookmark', err);
+        setBookmarkError('Unable to remove bookmark.');
+      }
+    },
+    [activeBookmarkMessageId],
+  );
+
+  const handleBookmarkClick = useCallback(
+    (bookmark: BookmarkRecord) => {
+      setBookmarkError(null);
+      setActiveBookmarkMessageId(null);
+      if (bookmark.sessionId === selectedSessionId) {
+        setPendingScrollMessageId(bookmark.message.id);
+        return;
+      }
+      if (isStreaming) {
+        abortControllerRef.current?.abort();
+      }
+      setSelectedSessionId(bookmark.sessionId);
+      setMessages([]);
+      setPendingScrollMessageId(bookmark.message.id);
+    },
+    [isStreaming, selectedSessionId],
+  );
 
   const handleNewSession = useCallback(async () => {
     if (isStreaming) {
@@ -478,6 +725,8 @@ export default function ChatPage() {
         setSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
         setSelectedSessionId(session.id);
         setMessages([]);
+        setActiveBookmarkMessageId(null);
+        setPendingScrollMessageId(null);
       } else {
         await loadSessions();
       }
@@ -497,6 +746,8 @@ export default function ChatPage() {
       }
       setSelectedSessionId(sessionId);
       setMessages([]);
+      setPendingScrollMessageId(null);
+      setActiveBookmarkMessageId(null);
     },
     [isStreaming, selectedSessionId],
   );
@@ -749,14 +1000,35 @@ export default function ChatPage() {
           {isLoadingMessages ? <p className="chat-status">Loading messages…</p> : null}
           {messages.map((message) => {
             const citations = message.citations ?? [];
+            const isBookmarked = bookmarkedMessageIds.has(message.id);
+            const isBookmarking = pendingBookmarkId === message.id;
+            const isHighlighted = activeBookmarkMessageId === message.id;
             return (
               <article
                 key={message.id}
-                className={`chat-message chat-message--${message.role}`}
+                ref={registerMessageRef(message.id)}
+                className={`chat-message chat-message--${message.role}${
+                  isHighlighted ? ' chat-message--highlight' : ''
+                }`}
                 data-testid={`chat-message-${message.role}`}
               >
-                <header className="chat-message__role">
-                  {message.role === 'assistant' ? 'Assistant' : message.role === 'user' ? 'You' : 'System'}
+                <header className="chat-message__header">
+                  <span className="chat-message__role">
+                    {message.role === 'assistant' ? 'Assistant' : message.role === 'user' ? 'You' : 'System'}
+                  </span>
+                  {message.role === 'assistant' ? (
+                    <div className="chat-message__actions">
+                      <button
+                        type="button"
+                        className="chat-bookmark-button"
+                        onClick={() => handleCreateBookmark(message)}
+                        disabled={isBookmarked || isBookmarking}
+                        aria-pressed={isBookmarked}
+                      >
+                        {isBookmarked ? 'Bookmarked' : isBookmarking ? 'Bookmarking…' : 'Bookmark'}
+                      </button>
+                    </div>
+                  ) : null}
                 </header>
                 <div className="chat-message__content">{renderMessageContent(message.content)}</div>
                 {citations.length > 0 ? (
@@ -796,6 +1068,59 @@ export default function ChatPage() {
           </div>
         </form>
       </section>
+      <aside className="chat-bookmarks">
+        <div className="chat-bookmarks__header">
+          <h2>Bookmarks</h2>
+        </div>
+        {bookmarkError ? (
+          <div className="chat-bookmarks__error" role="alert">
+            {bookmarkError}
+          </div>
+        ) : null}
+        {bookmarks.length === 0 ? (
+          <p className="chat-status">No bookmarks yet.</p>
+        ) : (
+          <ul className="chat-bookmark-list">
+            {bookmarks.map((bookmark) => {
+              const isActive = activeBookmarkMessageId === bookmark.message.id;
+              return (
+                <li
+                  key={bookmark.id}
+                  className={`chat-bookmark${isActive ? ' chat-bookmark--active' : ''}`}
+                >
+                  <div className="chat-bookmark__item">
+                    <button
+                      type="button"
+                      className="chat-bookmark__open"
+                      onClick={() => handleBookmarkClick(bookmark)}
+                      data-testid={`bookmark-item-${bookmark.id}`}
+                    >
+                      <span className="chat-bookmark__session">{bookmark.sessionTitle}</span>
+                      <span className="chat-bookmark__preview">
+                        {truncateText(bookmark.message.content)}
+                      </span>
+                      <span className="chat-bookmark__timestamp">
+                        {formatLastActivity(bookmark.createdAt ?? bookmark.message.createdAt)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-bookmark__remove"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteBookmark(bookmark.id);
+                      }}
+                      aria-label={`Remove bookmark for ${bookmark.sessionTitle}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </aside>
     </div>
   );
 }

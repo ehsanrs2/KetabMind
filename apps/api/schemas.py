@@ -42,3 +42,19 @@ class IndexRequest(BaseModel):  # type: ignore[misc]
             title=self.title,
         )
         return meta.as_dict()
+
+
+class MessageCreate(BaseModel):  # type: ignore[misc]
+    role: str
+    content: str
+    citations: list[str] | None = None
+    meta: dict[str, Any] | None = None
+
+
+class BookmarkCreate(BaseModel):  # type: ignore[misc]
+    message_id: int | str
+
+
+class SessionCreate(BaseModel):  # type: ignore[misc]
+    title: str | None = None
+    book_id: int | str | None = None
