@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Navbar from '../app/components/Navbar';
 import { AuthContext } from '../app/context/AuthContext';
+import { ThemeProvider } from '../app/context/ThemeContext';
 import { useRouter } from 'next/navigation';
 
 jest.mock('next/navigation', () => ({
@@ -12,21 +13,25 @@ const mockedUseRouter = useRouter as jest.Mock;
 describe('Navbar', () => {
   beforeEach(() => {
     mockedUseRouter.mockReturnValue({ replace: jest.fn() });
+    window.localStorage.clear();
+    delete document.body.dataset.theme;
   });
 
   it('shows login link when no user', () => {
     render(
-      <AuthContext.Provider
-        value={{
-          user: null,
-          loading: false,
-          error: null,
-          refresh: async () => {},
-          logout: async () => {},
-        }}
-      >
-        <Navbar />
-      </AuthContext.Provider>,
+      <ThemeProvider initialTheme="light">
+        <AuthContext.Provider
+          value={{
+            user: null,
+            loading: false,
+            error: null,
+            refresh: async () => {},
+            logout: async () => {},
+          }}
+        >
+          <Navbar />
+        </AuthContext.Provider>
+      </ThemeProvider>,
     );
 
     expect(screen.getByText(/ketabmind/i)).toBeInTheDocument();
@@ -39,17 +44,19 @@ describe('Navbar', () => {
     mockedUseRouter.mockReturnValue({ replace });
 
     render(
-      <AuthContext.Provider
-        value={{
-          user: { id: '1', name: 'Sara' },
-          loading: false,
-          error: null,
-          refresh: async () => {},
-          logout,
-        }}
-      >
-        <Navbar />
-      </AuthContext.Provider>,
+      <ThemeProvider initialTheme="light">
+        <AuthContext.Provider
+          value={{
+            user: { id: '1', name: 'Sara' },
+            loading: false,
+            error: null,
+            refresh: async () => {},
+            logout,
+          }}
+        >
+          <Navbar />
+        </AuthContext.Provider>
+      </ThemeProvider>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: /sara/i }));

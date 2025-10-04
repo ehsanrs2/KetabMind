@@ -1,0 +1,21 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ThemeProvider snapshots renders dark theme snapshot: dark-theme 1`] = `
+<DocumentFragment>
+  <div
+    data-testid="current-theme"
+  >
+    dark
+  </div>
+</DocumentFragment>
+`;
+
+exports[`ThemeProvider snapshots renders light theme snapshot: light-theme 1`] = `
+<DocumentFragment>
+  <div
+    data-testid="current-theme"
+  >
+    light
+  </div>
+</DocumentFragment>
+`;

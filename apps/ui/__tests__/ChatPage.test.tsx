@@ -227,6 +227,7 @@ describe('ChatPage', () => {
       stream.push({
         answer: 'Partial answer with citation',
         contexts: [{ book_id: 'book1', page_start: 12, page_end: 14 }],
+        meta: { coverage: 0.75, confidence: 0.64 },
       });
       stream.close();
     });
@@ -234,6 +235,11 @@ describe('ChatPage', () => {
     await waitFor(() => {
       const assistant = assistMessages().at(-1);
       expect(assistant).toHaveTextContent('Partial answer with citation');
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Coverage: 75%')).toBeInTheDocument();
+      expect(screen.getByText('Confidence: 64%')).toBeInTheDocument();
     });
 
     const assistant = assistMessages().at(-1) as HTMLElement;

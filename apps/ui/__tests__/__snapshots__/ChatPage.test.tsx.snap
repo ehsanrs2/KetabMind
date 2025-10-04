@@ -4,6 +4,7 @@ exports[`ChatPage applies RTL styles for Persian assistant messages: persian-ass
 <article
   class="chat-message chat-message--assistant rtl"
   data-testid="chat-message-assistant"
+  style="opacity: 0; transform: translateY(16px) translateZ(0);"
 >
   <header
     class="chat-message__header"
@@ -55,6 +56,7 @@ exports[`ChatPage keeps LTR layout for non-Persian assistant messages: non-persi
 <article
   class="chat-message chat-message--assistant"
   data-testid="chat-message-assistant"
+  style="opacity: 0; transform: translateY(16px) translateZ(0);"
 >
   <header
     class="chat-message__header"
