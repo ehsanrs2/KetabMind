@@ -61,6 +61,7 @@ type BookmarksResponse = {
     id?: string | number;
     session_id?: string | number;
     created_at?: string | null;
+    tag?: string | null;
     session?: {
       id?: string | number;
       title?: string | null;
@@ -82,8 +83,12 @@ type BookmarkRecord = {
   sessionId: string;
   sessionTitle: string;
   createdAt?: string | null;
+  tag: string | null;
   message: ChatMessage;
 };
+
+const ALL_BOOKMARKS_FILTER = 'all';
+const UNTAGGED_BOOKMARKS_FILTER = '__untagged__';
 
 function createMessageId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -370,6 +375,7 @@ function normaliseBookmark(item: BookmarksResponse['bookmarks'][number]): Bookma
     sessionId: String(sessionIdRaw),
     sessionTitle: item.session?.title ?? 'Untitled session',
     createdAt: item.created_at ?? null,
+    tag: item.tag ?? null,
     message: {
       id: String(messageIdRaw),
       role,
@@ -393,8 +399,11 @@ export default function ChatPage() {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState<'fa' | 'en'>('fa');
-  const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
+  const [allBookmarks, setAllBookmarks] = useState<BookmarkRecord[]>([]);
   const [bookmarkError, setBookmarkError] = useState<string | null>(null);
+  const [bookmarkFilterTag, setBookmarkFilterTag] = useState<string>(ALL_BOOKMARKS_FILTER);
+  const [bookmarkSearch, setBookmarkSearch] = useState('');
+  const [bookmarkTagDraft, setBookmarkTagDraft] = useState('');
   const [pendingBookmarkId, setPendingBookmarkId] = useState<string | null>(null);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState<string | null>(null);
   const [activeBookmarkMessageId, setActiveBookmarkMessageId] = useState<string | null>(null);
@@ -408,10 +417,71 @@ export default function ChatPage() {
     setSessionSearch(event.target.value);
   }, []);
 
+  const handleBookmarkSearchChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setBookmarkSearch(event.target.value);
+  }, []);
+
+  const handleBookmarkTagDraftChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setBookmarkTagDraft(event.target.value);
+  }, []);
+
+  const handleBookmarkTagSelect = useCallback((tag: string) => {
+    setBookmarkFilterTag(tag);
+    if (tag === ALL_BOOKMARKS_FILTER || tag === UNTAGGED_BOOKMARKS_FILTER) {
+      setBookmarkTagDraft('');
+    } else {
+      setBookmarkTagDraft(tag);
+    }
+  }, []);
+
   const bookmarkedMessageIds = useMemo(
-    () => new Set(bookmarks.map((bookmark) => bookmark.message.id)),
-    [bookmarks],
+    () => new Set(allBookmarks.map((bookmark) => bookmark.message.id)),
+    [allBookmarks],
   );
+
+  const availableBookmarkTags = useMemo(() => {
+    const tags = new Set<string>();
+    let hasUntagged = false;
+    for (const bookmark of allBookmarks) {
+    if (bookmark.tag) {
+      tags.add(bookmark.tag);
+    } else {
+      hasUntagged = true;
+    }
+  }
+  const sorted = Array.from(tags).sort((a, b) => a.localeCompare(b));
+    if (hasUntagged) {
+      sorted.unshift(UNTAGGED_BOOKMARKS_FILTER);
+    }
+    return [ALL_BOOKMARKS_FILTER, ...sorted];
+  }, [allBookmarks]);
+
+  const filteredBookmarks = useMemo(() => {
+    const searchValue = bookmarkSearch.trim().toLowerCase();
+    return allBookmarks.filter((bookmark) => {
+      if (bookmarkFilterTag === UNTAGGED_BOOKMARKS_FILTER) {
+        if (bookmark.tag) {
+          return false;
+        }
+      } else if (bookmarkFilterTag !== ALL_BOOKMARKS_FILTER) {
+        if (bookmark.tag !== bookmarkFilterTag) {
+          return false;
+        }
+      }
+
+      if (!searchValue) {
+        return true;
+      }
+      const haystack = `${bookmark.sessionTitle} ${bookmark.message.content}`.toLowerCase();
+      return haystack.includes(searchValue);
+    });
+  }, [allBookmarks, bookmarkFilterTag, bookmarkSearch]);
+
+  useEffect(() => {
+    if (!availableBookmarkTags.includes(bookmarkFilterTag)) {
+      setBookmarkFilterTag(ALL_BOOKMARKS_FILTER);
+    }
+  }, [availableBookmarkTags, bookmarkFilterTag]);
 
   const registerMessageRef = useCallback(
     (messageId: string) =>
@@ -443,12 +513,12 @@ export default function ChatPage() {
         .map(normaliseBookmark)
         .filter((item): item is BookmarkRecord => item !== null);
 
-      setBookmarks(mapped);
+      setAllBookmarks(mapped);
       setBookmarkError(null);
     } catch (err) {
       console.warn('Failed to load bookmarks', err);
       setBookmarkError('Unable to load bookmarks.');
-      setBookmarks([]);
+      setAllBookmarks([]);
     }
   }, []);
 
@@ -645,7 +715,14 @@ export default function ChatPage() {
             ...csrfHeaders,
           },
           credentials: 'include',
-          body: JSON.stringify({ message_id: message.id }),
+          body: JSON.stringify({
+            message_id: message.id,
+            tag:
+              bookmarkTagDraft.trim() ||
+              (bookmarkFilterTag !== ALL_BOOKMARKS_FILTER && bookmarkFilterTag !== UNTAGGED_BOOKMARKS_FILTER
+                ? bookmarkFilterTag
+                : undefined),
+          }),
         });
 
         if (!response.ok) {
@@ -658,7 +735,7 @@ export default function ChatPage() {
         const normalised = normaliseBookmark(payload?.bookmark ?? (payload as any));
 
         if (normalised) {
-          setBookmarks((current) => [normalised, ...current.filter((item) => item.id !== normalised.id)]);
+          setAllBookmarks((current) => [normalised, ...current.filter((item) => item.id !== normalised.id)]);
         } else {
           await loadBookmarks();
         }
@@ -669,7 +746,7 @@ export default function ChatPage() {
         setPendingBookmarkId(null);
       }
     },
-    [csrfHeaders, loadBookmarks],
+    [bookmarkFilterTag, bookmarkTagDraft, csrfHeaders, loadBookmarks],
   );
 
   const handleDeleteBookmark = useCallback(
@@ -683,7 +760,7 @@ export default function ChatPage() {
         if (!response.ok && response.status !== 204) {
           throw new Error('Failed to delete bookmark');
         }
-        setBookmarks((current) => {
+        setAllBookmarks((current) => {
           let removedMessageId: string | null = null;
           const filtered = current.filter((item) => {
             if (item.id === bookmarkId) {
@@ -1158,17 +1235,58 @@ export default function ChatPage() {
       <aside className="chat-bookmarks">
         <div className="chat-bookmarks__header">
           <h2>Bookmarks</h2>
+          <div className="chat-bookmarks__controls">
+            <input
+              type="search"
+              className="chat-bookmarks__search"
+              placeholder="Search bookmarks"
+              value={bookmarkSearch}
+              onChange={handleBookmarkSearchChange}
+            />
+            <input
+              type="text"
+              className="chat-bookmarks__tag-input"
+              placeholder="Tag new bookmarks (optional)"
+              value={bookmarkTagDraft}
+              onChange={handleBookmarkTagDraftChange}
+            />
+          </div>
+          <div className="chat-bookmarks__tabs" role="tablist" aria-label="Bookmark tags">
+            {availableBookmarkTags.map((tag) => {
+              const isActive = bookmarkFilterTag === tag;
+              const label =
+                tag === ALL_BOOKMARKS_FILTER
+                  ? 'All'
+                  : tag === UNTAGGED_BOOKMARKS_FILTER
+                    ? 'No tag'
+                    : tag;
+              return (
+                <button
+                  type="button"
+                  key={tag}
+                  className={`chat-bookmarks__tab${isActive ? ' chat-bookmarks__tab--active' : ''}`}
+                  onClick={() => handleBookmarkTagSelect(tag)}
+                  role="tab"
+                  aria-selected={isActive}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         {bookmarkError ? (
           <div className="chat-bookmarks__error" role="alert">
             {bookmarkError}
           </div>
         ) : null}
-        {bookmarks.length === 0 ? (
-          <p className="chat-status">No bookmarks yet.</p>
+        {filteredBookmarks.length === 0 ? (
+          <p className="chat-status">
+            {allBookmarks.length === 0 ? 'No bookmarks yet.' : 'No bookmarks match your filters.'}
+          </p>
         ) : (
           <ul className="chat-bookmark-list">
-            {bookmarks.map((bookmark) => {
+            {filteredBookmarks.map((bookmark) => {
               const isActive = activeBookmarkMessageId === bookmark.message.id;
               return (
                 <li
@@ -1183,6 +1301,9 @@ export default function ChatPage() {
                       data-testid={`bookmark-item-${bookmark.id}`}
                     >
                       <span className="chat-bookmark__session">{bookmark.sessionTitle}</span>
+                      {bookmark.tag ? (
+                        <span className="chat-bookmark__tag">{bookmark.tag}</span>
+                      ) : null}
                       <span className="chat-bookmark__preview">
                         {truncateText(bookmark.message.content)}
                       </span>

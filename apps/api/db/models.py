@@ -118,6 +118,7 @@ class Bookmark(TimestampMixin, Base):
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    tag: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
     owner: Mapped[User] = relationship(back_populates="bookmarks")
     session: Mapped[Session] = relationship(back_populates="bookmarks")

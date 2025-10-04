@@ -4,6 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'util';
 import ChatPage from '../app/(protected)/chat/page';
 
+jest.mock('../app/context/AuthContext', () => ({
+  useAuth: () => ({ csrfToken: 'csrf-token' }),
+}));
+
 if (typeof globalThis.TextDecoder === 'undefined') {
   globalThis.TextDecoder = NodeTextDecoder as unknown as typeof globalThis.TextDecoder;
 }
@@ -145,6 +149,7 @@ describe('ChatPage', () => {
               id: bookmarkIdCounter,
               session_id: 1,
               created_at: '2024-01-01T02:00:00Z',
+              tag: body.tag ?? null,
               session: { id: 1, title: 'Mock Session' },
               message: {
                 id: body.message_id,
@@ -236,6 +241,11 @@ describe('ChatPage', () => {
     assistant.scrollIntoView = assistantScrollSpy;
 
     const bookmarkButton = await screen.findByRole('button', { name: 'Bookmark' });
+    const bookmarkTagInput = screen.getByPlaceholderText('Tag new bookmarks (optional)');
+
+    await act(async () => {
+      await user.type(bookmarkTagInput, 'math');
+    });
 
     await act(async () => {
       await user.click(bookmarkButton);
@@ -247,6 +257,12 @@ describe('ChatPage', () => {
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('assistant-'),
+        }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/bookmarks',
+        expect.objectContaining({
+          body: expect.stringContaining('"tag":"math"'),
         }),
       );
       expect(screen.getByRole('button', { name: 'Bookmarked' })).toBeDisabled();

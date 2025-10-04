@@ -377,6 +377,7 @@ def _serialize_bookmark(bookmark: models.Bookmark) -> dict[str, Any]:
         "session_id": bookmark.session_id,
         "message_id": bookmark.message_id,
         "created_at": _isoformat(bookmark.created_at),
+        "tag": bookmark.tag,
         "session": (
             {
                 "id": session_obj.id,
@@ -843,6 +844,7 @@ def serve_book_asset(token: str) -> Response:
 def bookmarks(
     current_user: Annotated[dict[str, Any], Depends(get_current_user)],
     user_id: Annotated[str | None, Query(None)] = None,
+    tag: Annotated[str | None, Query(None)] = None,
 ) -> dict[str, Any]:
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:
@@ -850,7 +852,8 @@ def bookmarks(
     with session_scope() as db_session:
         owner = _ensure_owner(db_session, current_user)
         repo = repositories.BookmarkRepository(db_session, owner.id)
-        records = repo.list()
+        filter_tag = (tag or "").strip() or None
+        records = repo.list(tag=filter_tag)
         payload = [_serialize_bookmark(record) for record in records]
         return {"bookmarks": payload}
 
@@ -864,8 +867,9 @@ def create_bookmark(
         owner = _ensure_owner(db_session, current_user)
         repo = repositories.BookmarkRepository(db_session, owner.id)
         message_id = _parse_identifier(payload.message_id, field="message_id")
+        tag_value = (payload.tag or "").strip() or None
         try:
-            bookmark = repo.create(message_id=message_id)
+            bookmark = repo.create(message_id=message_id, tag=tag_value)
         except ValueError as exc:
             detail = str(exc)
             status_code = status.HTTP_404_NOT_FOUND

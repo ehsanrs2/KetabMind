@@ -53,6 +53,7 @@ class MessageCreate(BaseModel):  # type: ignore[misc]
 
 class BookmarkCreate(BaseModel):  # type: ignore[misc]
     message_id: int | str
+    tag: str | None = None
 
 
 class SessionCreate(BaseModel):  # type: ignore[misc]
