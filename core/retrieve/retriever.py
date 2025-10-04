@@ -11,8 +11,10 @@ import structlog
 from caching import LRUCache
 from core.config import settings
 from core.embed import get_embedder
+from core.fts import get_backend as get_fts_backend
 from core.vector.qdrant import VectorStore
 from lexical import overlap_score
+from qdrant_client.http import models as rest
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from reranker import RerankerAdapter
@@ -85,7 +87,11 @@ class _Candidate:
 
 class SearchClient(Protocol):
     def search(
-        self, collection_name: str, query_vector: Sequence[float], limit: int
+        self,
+        collection_name: str,
+        query_vector: Sequence[float],
+        limit: int,
+        query_filter: Any | None = None,
     ) -> Sequence[Any]: ...
 
 
@@ -189,6 +195,87 @@ class Retriever:
             )
         return self._reranker
 
+    def _vector_hits(
+        self,
+        store: VectorStoreLike,
+        query_vector: Sequence[float],
+        limit: int,
+        page_map: Mapping[str, set[int]] | None,
+    ) -> list[Any]:
+        if not page_map:
+            return list(
+                store.client.search(
+                    collection_name=store.collection,
+                    query_vector=query_vector,
+                    limit=limit,
+                )
+            )
+
+        hits: list[Any] = []
+        multiplier = max(1, settings.fts_vector_multiplier)
+        for matched_book_id, pages in page_map.items():
+            try:
+                book_hits = store.client.search(
+                    collection_name=store.collection,
+                    query_vector=query_vector,
+                    limit=max(limit, len(pages) * multiplier),
+                    query_filter=rest.Filter(
+                        must=[
+                            rest.FieldCondition(
+                                key="book_id",
+                                match=rest.MatchValue(value=matched_book_id),
+                            )
+                        ]
+                    ),
+                )
+            except Exception:
+                log.warning(
+                    "retriever.fts_vector_search_failed",
+                    book_id=matched_book_id,
+                    exc_info=True,
+                )
+                continue
+            hits.extend(book_hits)
+        return hits
+
+    def _build_candidates(
+        self,
+        query: str,
+        hits: Sequence[Any],
+        page_map: Mapping[str, set[int]] | None,
+    ) -> list[_Candidate]:
+        candidates: list[_Candidate] = []
+        for hit in hits:
+            payload = _cast_mapping(getattr(hit, "payload", {}))
+            snippet = str(payload.get("text", ""))
+            book_id = str(payload.get("book_id", ""))
+            page_raw = payload.get("page_num")
+            if page_raw is None:
+                page_raw = payload.get("page_start", -1)
+            try:
+                page = int(page_raw)
+            except (TypeError, ValueError):
+                page = -1
+
+            if page_map is not None:
+                allowed = page_map.get(book_id)
+                if not allowed or page not in allowed:
+                    continue
+
+            cosine = float(getattr(hit, "score", 0.0) or 0.0)
+            chunk_id = payload.get("chunk_id") or getattr(hit, "id", "")
+            candidate = _Candidate(
+                id=str(chunk_id),
+                book_id=book_id,
+                page=page,
+                snippet=snippet,
+                cosine=cosine,
+                metadata=dict(_cast_mapping(payload.get("meta"))),
+            )
+            candidate.lexical = overlap_score(query, snippet)
+            candidates.append(candidate)
+        return candidates
+
     def _hybrid_score(self, candidate: _Candidate) -> float:
         components: list[tuple[str, float]] = [
             ("cosine", candidate.cosine),
@@ -223,6 +310,8 @@ class Retriever:
         query: str,
         top_n: int | None = None,
         top_k: int | None = None,
+        *,
+        book_id: str | None = None,
     ) -> list[ScoredChunk]:
         if top_n is not None and top_k is not None or top_n is not None:
             final_n = int(top_n)
@@ -235,36 +324,38 @@ class Retriever:
         store = self._ensure_store(len(query_vector))
 
         initial_limit = max(final_n, self.top_m, self.reranker_topk)
-        hits = store.client.search(
-            collection_name=store.collection,
-            query_vector=query_vector,
-            limit=initial_limit,
+        page_map: dict[str, set[int]] = {}
+        fts_backend = get_fts_backend()
+        if fts_backend.is_available():
+            try:
+                matches = fts_backend.search(
+                    query,
+                    book_id=book_id,
+                    limit=max(1, settings.fts_page_limit),
+                )
+            except Exception:
+                log.warning("retriever.fts_failed", exc_info=True)
+            else:
+                for match in matches:
+                    if match.page_num < 0:
+                        continue
+                    page_map.setdefault(match.book_id, set()).add(int(match.page_num))
+
+        hits = self._vector_hits(
+            store,
+            query_vector,
+            initial_limit,
+            page_map if page_map else None,
+        )
+        candidates = self._build_candidates(
+            query,
+            hits,
+            page_map if page_map else None,
         )
 
-        candidates: list[_Candidate] = []
-        for hit in hits:
-            payload = _cast_mapping(getattr(hit, "payload", {}))
-            snippet = str(payload.get("text", ""))
-            book_id = str(payload.get("book_id", ""))
-            page_raw = payload.get("page_num")
-            if page_raw is None:
-                page_raw = payload.get("page_start", -1)
-            try:
-                page = int(page_raw)
-            except (TypeError, ValueError):
-                page = -1
-            cosine = float(getattr(hit, "score", 0.0) or 0.0)
-            chunk_id = payload.get("chunk_id") or getattr(hit, "id", "")
-            candidate = _Candidate(
-                id=str(chunk_id),
-                book_id=book_id,
-                page=page,
-                snippet=snippet,
-                cosine=cosine,
-                metadata=dict(_cast_mapping(payload.get("meta"))),
-            )
-            candidate.lexical = overlap_score(query, snippet)
-            candidates.append(candidate)
+        if page_map and not candidates:
+            hits = self._vector_hits(store, query_vector, initial_limit, None)
+            candidates = self._build_candidates(query, hits, None)
 
         reranker = self._get_reranker()
         if reranker and candidates:

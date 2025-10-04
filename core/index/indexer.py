@@ -15,6 +15,7 @@ import structlog
 from core.chunk.chunker import sliding_window_chunks
 from core.config import settings
 from core.embed import get_embedder
+from core.fts import get_backend as get_fts_backend
 from core.ingest.pdf_to_text import Page, pdf_to_pages
 from core.vector.qdrant_client import VectorStore
 from ingest.pipeline import pages_to_records, write_records
@@ -158,6 +159,16 @@ def index_path(
         pages = [Page(page_num=page, text=text) for text, page in texts_pages]
     else:
         raise SystemExit("Unsupported file type; use .pdf or .txt")
+
+    fts_backend = get_fts_backend()
+    if fts_backend.is_available():
+        try:
+            fts_backend.index_book(
+                book_id,
+                [(page.page_num, page.text) for page in pages],
+            )
+        except Exception:  # pragma: no cover - defensive logging
+            log.warning("fts.index_failed", book_id=book_id, exc_info=True)
 
     records = pages_to_records(
         pages,

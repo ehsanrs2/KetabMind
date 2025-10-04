@@ -128,6 +128,11 @@ class Settings(BaseSettingsProto):  # type: ignore[misc]
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "books"
 
+    fts_backend: str = "none"
+    fts_sqlite_path: str = "./data/fts.db"
+    fts_page_limit: int = 25
+    fts_vector_multiplier: int = 5
+
     embed_model: str = "mock"  # mock|small|base
 
     reranker_enabled: bool = False
