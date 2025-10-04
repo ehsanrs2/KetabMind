@@ -1003,13 +1003,15 @@ export default function ChatPage() {
             const isBookmarked = bookmarkedMessageIds.has(message.id);
             const isBookmarking = pendingBookmarkId === message.id;
             const isHighlighted = activeBookmarkMessageId === message.id;
+            const messageLang = (message.meta?.lang as string | undefined) ?? null;
+            const isRTLMessage = (messageLang ?? '').toLowerCase() === 'fa';
             return (
               <article
                 key={message.id}
                 ref={registerMessageRef(message.id)}
                 className={`chat-message chat-message--${message.role}${
                   isHighlighted ? ' chat-message--highlight' : ''
-                }`}
+                }${isRTLMessage ? ' rtl' : ''}`}
                 data-testid={`chat-message-${message.role}`}
               >
                 <header className="chat-message__header">
