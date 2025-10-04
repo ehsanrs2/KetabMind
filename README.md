@@ -7,6 +7,15 @@ Quickstart
 - make test
 - make run
 
+Usage walkthrough
+-----------------
+
+1. **Upload a book.** Open `http://localhost:3000/upload`, choose a PDF, fill in the metadata fields, and click **Upload**. The UI reports ingestion progress, shows a status badge for each document, and lets you trigger indexing as soon as the file is stored.
+
+2. **Chat or search.** Navigate to `http://localhost:3000/chat`, start a new session, and ask a question. Use the built-in search box to pre-filter your sessions or jump directly to a specific book by ID without leaving the page.
+
+3. **Export the answer.** Click the **Export** action beside any assistant message (or call the `/export` API) to generate a PDF or Word document with citations and confidence metadata, ready for download or sharing.
+
 Backups
 -------
 
@@ -258,9 +267,8 @@ Additional Prometheus and Grafana settings can be tuned via the mounted config i
 
 ### Observability snapshots
 
-![Grafana dashboard with latency and throughput panels](docs/images/grafana-dashboard.png)
-
-![Sample Prometheus /metrics output rendered in the browser](docs/images/prometheus-metrics.png)
+- **Grafana dashboard:** Monitor ingestion throughput, query latency, and GPU health on the prebuilt panels under *Home → KetabMind*. Use the time-range selector and per-panel queries to drill into spikes or regressions.
+- **Prometheus metrics:** Visit `http://localhost:9090/metrics` to confirm service-level counters (requests, token usage, GPU utilization). The `/graph` UI can run ad-hoc queries like `rate(http_requests_total[5m])` when debugging traffic patterns.
 
 ### Troubleshooting
 
@@ -268,6 +276,9 @@ Additional Prometheus and Grafana settings can be tuned via the mounted config i
 - **Permission denied on bind mounts:** The host user may not own `./data/*` directories. Fix with `sudo chown -R $USER:$USER data` (or adjust to your UID/GID) before starting Compose.
 - **Port conflicts:** Override host ports with `docker compose up -d --force-recreate -p ketabmind` after editing the published ports (e.g., `8000:8000` → `8080:8000`) or set environment variable overrides via `.env`.
 - **GPU not detected (future phases):** Ensure the NVIDIA Container Toolkit is installed, start Compose with `docker compose --profile gpu up`, and set `CUDA_VISIBLE_DEVICES`/`NVIDIA_VISIBLE_DEVICES` in `.env` to target available GPUs.
+- **GPU tuning fails:** Confirm `poetry install --with gpu` succeeded, then run `poetry run python scripts/bench_gpu.py --device cuda:0` to verify CUDA visibility and gather memory stats. 【F:scripts/bench_gpu.py†L1-L144】
+- **PDF export missing glyphs:** Install the desired `.ttf` file (e.g., Vazirmatn) and register it with ReportLab before exporting. See the example above for registering fonts programmatically. 【F:exporting/exporter.py†L88-L128】
+- **FTS index corrupted or empty:** Delete the SQLite database at `FTS_SQLITE_PATH` (default `./data/fts.db`), run `poetry run python -c "from core.fts import reset_backend; reset_backend()"`, then re-run your ingestion job (e.g., `make ingest-pdf INPUT=book.pdf ...`) to rebuild lexical search. 【F:core/fts/__init__.py†L68-L118】【F:core/index/indexer.py†L160-L199】
 
 Phase 6 – UI & Auth
 -------------------
@@ -303,6 +314,63 @@ Phase 6 – UI & Auth
 - Login responses set the JWT in an `HttpOnly` cookie and echo the token via an `x-csrf-token` header. The frontend must include that header on subsequent mutations to satisfy CSRF checks.
 - Book viewer links are generated as signed URLs that embed the owner, book, filename, and page along with an expiry timestamp. Requests with invalid or expired signatures are rejected.
 - The API enforces per-client rate limits. Query requests (`/query`) specifically apply an additional per-second limit so abusive clients receive a `429 Too Many Requests` response with a `Retry-After` hint.
+
+Phase 7 – Product Features & Polish
+-----------------------------------
+
+### Answer exports
+
+- Export any assistant response through the REST API:
+
+  ```bash
+  curl -X POST "http://localhost:8000/export" \
+    -H "Content-Type: application/json" \
+    -d '{"message_id": "<uuid>", "format": "pdf"}' > answer.pdf
+  ```
+
+- Supported formats are `pdf`, `word`, and `docx`. The exporter normalises bullet lists, citations, and coverage metrics before piping them through ReportLab (`PDF`) or `python-docx` (`Word`). 【F:apps/api/main.py†L1045-L1080】【F:exporting/exporter.py†L54-L190】
+- Need branded fonts for Persian output? Drop the `.ttf` file in `resources/fonts/`, then register it before exporting:
+
+  ```bash
+  poetry run python - <<'PY'
+  from reportlab.pdfbase import pdfmetrics
+  from reportlab.pdfbase.ttfonts import TTFont
+
+  pdfmetrics.registerFont(TTFont("Vazirmatn", "resources/fonts/Vazirmatn-Regular.ttf"))
+  print("Registered Vazirmatn for PDF exports.")
+  PY
+  ```
+
+  Update `exporting/exporter.py` to call `text_obj.setFont("Vazirmatn", 12)` if you prefer the new font globally.
+
+### Full-text search
+
+- Enable SQLite-backed FTS by setting the following in `.env`:
+
+  ```env
+  FTS_BACKEND=sqlite
+  FTS_SQLITE_PATH=./data/fts.db
+  ```
+
+- Each ingestion run indexes pages into the FTS database so `/search` can return instant book/page matches alongside the vector pipeline. 【F:core/index/indexer.py†L160-L199】【F:apps/api/main.py†L655-L692】
+- Query the index directly:
+
+  ```bash
+  curl "http://localhost:8000/search?query=تصاعدی&limit=5"
+  ```
+
+- Adjust `FTS_PAGE_LIMIT` and `FTS_VECTOR_MULTIPLIER` to balance lexical vs. semantic recall. 【F:core/config.py†L131-L134】【F:core/retrieve/retriever.py†L215-L337】
+
+### GPU tuning & benchmarking
+
+- `utils.gpu_opt.GPUOptimizer` dynamically trims prompts and right-sizes batch sizes using live CUDA memory stats. Call it from custom pipelines or run the helper benchmark:
+
+  ```bash
+  poetry run python scripts/bench_gpu.py --device cuda:0 --sample-text "GPU warmup"
+  ```
+
+- Combine with quantisation toggles to stay within VRAM budgets: set `EMBED_QUANT=4bit|8bit` and `LLM_LOAD_IN_4BIT=true` to switch the embedder/LLM into reduced-precision modes. 【F:utils/gpu_opt.py†L1-L140】
+- When memory is tight, lower `BATCH_SIZE` (embeddings) or ask the optimiser for `adjust_batch_size(...)` before launching the workload. 【F:utils/gpu_opt.py†L77-L118】
 
 Running tests
 -------------
