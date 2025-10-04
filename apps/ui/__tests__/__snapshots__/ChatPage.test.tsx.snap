@@ -1,0 +1,71 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ChatPage applies RTL styles for Persian assistant messages: persian-assistant-message 1`] = `
+<article
+  class="chat-message chat-message--assistant rtl"
+  data-testid="chat-message-assistant"
+>
+  <header
+    class="chat-message__header"
+  >
+    <span
+      class="chat-message__role"
+    >
+      Assistant
+    </span>
+    <div
+      class="chat-message__actions"
+    >
+      <button
+        aria-pressed="false"
+        class="chat-bookmark-button"
+        type="button"
+      >
+        Bookmark
+      </button>
+    </div>
+  </header>
+  <div
+    class="chat-message__content"
+  >
+    <span>
+      پاسخ فارسی
+    </span>
+  </div>
+</article>
+`;
+
+exports[`ChatPage keeps LTR layout for non-Persian assistant messages: non-persian-assistant-message 1`] = `
+<article
+  class="chat-message chat-message--assistant"
+  data-testid="chat-message-assistant"
+>
+  <header
+    class="chat-message__header"
+  >
+    <span
+      class="chat-message__role"
+    >
+      Assistant
+    </span>
+    <div
+      class="chat-message__actions"
+    >
+      <button
+        aria-pressed="false"
+        class="chat-bookmark-button"
+        type="button"
+      >
+        Bookmark
+      </button>
+    </div>
+  </header>
+  <div
+    class="chat-message__content"
+  >
+    <span>
+      English answer
+    </span>
+  </div>
+</article>
+`;

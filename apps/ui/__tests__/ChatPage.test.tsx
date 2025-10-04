@@ -265,4 +265,112 @@ describe('ChatPage', () => {
 
     warnSpy.mockRestore();
   });
+
+  it('applies RTL styles for Persian assistant messages', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.pathname
+              : input.url;
+        const method = init?.method ?? 'GET';
+
+        if (url === '/bookmarks' && method === 'GET') {
+          return Promise.resolve(createJsonResponse({ bookmarks: [] }));
+        }
+
+        if (url === '/sessions' && method === 'GET') {
+          return Promise.resolve(
+            createJsonResponse({
+              sessions: [
+                {
+                  id: '1',
+                  title: 'Mock Session',
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url === '/sessions/1/messages' && method === 'GET') {
+          return Promise.resolve(
+            createJsonResponse({
+              messages: [
+                {
+                  id: 'assistant-rtl',
+                  role: 'assistant',
+                  content: 'پاسخ فارسی',
+                  meta: { lang: 'fa' },
+                },
+              ],
+            }),
+          );
+        }
+
+        return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+      });
+
+    render(<ChatPage />);
+
+    const message = await screen.findByTestId('chat-message-assistant');
+    expect(message).toHaveClass('rtl');
+    expect(message).toMatchSnapshot('persian-assistant-message');
+  });
+
+  it('keeps LTR layout for non-Persian assistant messages', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.pathname
+              : input.url;
+        const method = init?.method ?? 'GET';
+
+        if (url === '/bookmarks' && method === 'GET') {
+          return Promise.resolve(createJsonResponse({ bookmarks: [] }));
+        }
+
+        if (url === '/sessions' && method === 'GET') {
+          return Promise.resolve(
+            createJsonResponse({
+              sessions: [
+                {
+                  id: '1',
+                  title: 'Mock Session',
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url === '/sessions/1/messages' && method === 'GET') {
+          return Promise.resolve(
+            createJsonResponse({
+              messages: [
+                {
+                  id: 'assistant-default',
+                  role: 'assistant',
+                  content: 'English answer',
+                  meta: { lang: 'en' },
+                },
+              ],
+            }),
+          );
+        }
+
+        return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+      });
+
+    render(<ChatPage />);
+
+    const message = await screen.findByTestId('chat-message-assistant');
+    expect(message).not.toHaveClass('rtl');
+    expect(message).toMatchSnapshot('non-persian-assistant-message');
+  });
 });

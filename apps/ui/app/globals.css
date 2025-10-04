@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap');
+
 :root {
   --font-vazirmatn: 'Vazirmatn', sans-serif;
   font-family: var(--font-vazirmatn);
@@ -17,8 +19,12 @@ body {
   font-family: var(--font-vazirmatn), sans-serif;
 }
 
-body.rtl {
+.rtl {
   direction: rtl;
+  unicode-bidi: plaintext;
+}
+
+body.rtl {
   text-align: right;
 }
 
