@@ -1,57 +1,350 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useMemo, useState } from 'react';
+
+type UploadResponse = {
+  book_id?: string;
+  version?: number | string;
+  file_hash?: string;
+  message?: string;
+  detail?: string;
+  already_indexed?: boolean;
+  deduplicated?: boolean;
+  duplicate?: boolean;
+  [key: string]: unknown;
+};
+
+type StatusState = {
+  type: 'idle' | 'success' | 'error';
+  message: string | null;
+};
+
+type IndexStatusState = {
+  type: 'success' | 'error';
+  message: string;
+} | null;
+
+const INITIAL_FORM = {
+  title: '',
+  author: '',
+  year: '',
+  subject: '',
+};
+
+function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
+  if (xhr.responseType === 'json' && xhr.response) {
+    return xhr.response as UploadResponse;
+  }
+
+  const text = xhr.responseText;
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as UploadResponse;
+  } catch (error) {
+    console.warn('Failed to parse upload response', error);
+    return null;
+  }
+}
+
+function extractMessage(payload: UploadResponse | null, fallback: string): string {
+  if (payload) {
+    if (typeof payload.detail === 'string' && payload.detail.trim().length > 0) {
+      return payload.detail;
+    }
+
+    if (typeof payload.message === 'string' && payload.message.trim().length > 0) {
+      return payload.message;
+    }
+  }
+
+  return fallback;
+}
+
+function isAlreadyIndexed(payload: UploadResponse | null): boolean {
+  if (!payload) {
+    return false;
+  }
+
+  if (payload.already_indexed || payload.deduplicated || payload.duplicate) {
+    return true;
+  }
+
+  const detail = typeof payload.detail === 'string' ? payload.detail.toLowerCase() : '';
+  const message = typeof payload.message === 'string' ? payload.message.toLowerCase() : '';
+
+  return detail.includes('already indexed') || message.includes('already indexed');
+}
 
 export default function UploadPage() {
-  const [title, setTitle] = useState('');
+  const [formValues, setFormValues] = useState(INITIAL_FORM);
   const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [status, setStatus] = useState<StatusState>({ type: 'idle', message: null });
+  const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(null);
+  const [dedupMessage, setDedupMessage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<IndexStatusState>(null);
+
+  const handleInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
+    setFormValues((previous) => ({ ...previous, [name]: value }));
+  }, []);
+
+  const resetStateForNewUpload = useCallback(() => {
+    setStatus({ type: 'idle', message: null });
+    setUploadResponse(null);
+    setDedupMessage(null);
+    setIndexStatus(null);
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     if (!file) {
-      setStatus('Please choose a file to upload.');
+      setStatus({ type: 'error', message: 'Please choose a file to upload.' });
       return;
     }
 
+    setIsUploading(true);
+    setProgress(0);
+    resetStateForNewUpload();
+
     const formData = new FormData();
-    formData.append('title', title);
+    formData.append('title', formValues.title);
+    formData.append('author', formValues.author);
+    formData.append('year', formValues.year);
+    formData.append('subject', formValues.subject);
     formData.append('file', file);
 
     try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
+      const payload = await new Promise<UploadResponse>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload');
+        xhr.responseType = 'json';
+
+        xhr.upload.onprogress = (progressEvent) => {
+          if (progressEvent.lengthComputable) {
+            const percentage = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+            setProgress(percentage);
+          }
+        };
+
+        xhr.onload = () => {
+          const responsePayload = parseXhrResponse(xhr);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(responsePayload ?? {});
+          } else {
+            reject(new Error(extractMessage(responsePayload, `Upload failed with status ${xhr.status}`)));
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new Error('Network error while uploading.'));
+        };
+
+        xhr.send(formData);
       });
 
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-
-      setStatus('Upload successful!');
-      setTitle('');
+      setUploadResponse(payload);
+      setStatus({
+        type: 'success',
+        message: extractMessage(payload, 'Upload completed successfully.'),
+      });
+      setDedupMessage(
+        isAlreadyIndexed(payload)
+          ? 'This file was already indexed. You can trigger indexing again if needed.'
+          : null,
+      );
+      setFormValues(INITIAL_FORM);
       setFile(null);
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Upload failed');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed.';
+      setStatus({ type: 'error', message });
+      setUploadResponse(null);
+    } finally {
+      setIsUploading(false);
+      setProgress(null);
     }
   };
+
+  const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setFile(event.target.files?.[0] ?? null);
+  }, []);
+
+  const handleIndexNow = useCallback(async () => {
+    if (!uploadResponse) {
+      return;
+    }
+
+    setIsIndexing(true);
+    setIndexStatus(null);
+
+    try {
+      const response = await fetch('/index', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          book_id: uploadResponse.book_id,
+          version: uploadResponse.version,
+          file_hash: uploadResponse.file_hash,
+        }),
+      });
+
+      const text = await response.text();
+      let json: UploadResponse | null = null;
+      if (text) {
+        try {
+          json = JSON.parse(text) as UploadResponse;
+        } catch (error) {
+          console.warn('Failed to parse index response', error);
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(extractMessage(json, `Indexing failed with status ${response.status}`));
+      }
+
+      setIndexStatus({
+        type: 'success',
+        message: extractMessage(json, 'Indexing started.'),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Indexing failed.';
+      setIndexStatus({ type: 'error', message });
+    } finally {
+      setIsIndexing(false);
+    }
+  }, [uploadResponse]);
+
+  const bookId = useMemo(() => uploadResponse?.book_id ?? '—', [uploadResponse]);
+  const version = useMemo(() => (uploadResponse?.version ?? '—').toString(), [uploadResponse]);
+  const fileHash = useMemo(() => uploadResponse?.file_hash ?? '—', [uploadResponse]);
 
   return (
     <div className="page-card">
       <h1>Upload a book</h1>
-      <form className="form" onSubmit={handleSubmit}>
-        <label>
-          Title
-          <input value={title} onChange={(event) => setTitle(event.target.value)} required />
-        </label>
-        <label>
-          File
-          <input type="file" accept=".pdf,.epub" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />
-        </label>
-        <button type="submit">Upload</button>
-        {status && <p role="status">{status}</p>}
+      <form className="form" onSubmit={handleSubmit} noValidate>
+        <div className="form-grid">
+          <div className="form-field">
+            <label htmlFor="title">Title</label>
+            <input
+              id="title"
+              name="title"
+              type="text"
+              value={formValues.title}
+              onChange={handleInputChange}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label htmlFor="author">Author</label>
+            <input
+              id="author"
+              name="author"
+              type="text"
+              value={formValues.author}
+              onChange={handleInputChange}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label htmlFor="year">Year</label>
+            <input
+              id="year"
+              name="year"
+              type="number"
+              min="0"
+              inputMode="numeric"
+              value={formValues.year}
+              onChange={handleInputChange}
+              required
+            />
+          </div>
+          <div className="form-field">
+            <label htmlFor="subject">Subject</label>
+            <input
+              id="subject"
+              name="subject"
+              type="text"
+              value={formValues.subject}
+              onChange={handleInputChange}
+              required
+            />
+          </div>
+        </div>
+        <div className="form-field">
+          <label htmlFor="file">File</label>
+          <input
+            id="file"
+            name="file"
+            type="file"
+            accept="application/pdf,.pdf,.epub,application/epub+zip"
+            onChange={handleFileChange}
+            required
+          />
+        </div>
+        <button type="submit" disabled={isUploading}>
+          {isUploading ? 'Uploading…' : 'Upload'}
+        </button>
       </form>
+
+      {progress !== null && (
+        <p aria-live="polite" className="mt-2">
+          Upload progress: {progress}%
+        </p>
+      )}
+
+      {status.message && (
+        <p
+          role="status"
+          className={status.type === 'error' ? 'text-danger mt-2' : 'text-success mt-2'}
+        >
+          {status.message}
+        </p>
+      )}
+
+      {dedupMessage && (
+        <p role="status" className="mt-2">
+          {dedupMessage}
+        </p>
+      )}
+
+      {uploadResponse && (
+        <div className="result-card mt-4">
+          <h2>Upload details</h2>
+          <dl>
+            <div>
+              <dt>Book ID</dt>
+              <dd data-testid="upload-result-book-id">{bookId}</dd>
+            </div>
+            <div>
+              <dt>Version</dt>
+              <dd data-testid="upload-result-version">{version}</dd>
+            </div>
+            <div>
+              <dt>File hash</dt>
+              <dd data-testid="upload-result-file-hash">{fileHash}</dd>
+            </div>
+          </dl>
+          <button type="button" onClick={handleIndexNow} disabled={isIndexing}>
+            {isIndexing ? 'Indexing…' : 'Index now'}
+          </button>
+          {indexStatus && (
+            <p
+              role="status"
+              className={indexStatus.type === 'error' ? 'text-danger mt-2' : 'text-success mt-2'}
+            >
+              {indexStatus.message}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
