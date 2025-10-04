@@ -269,6 +269,41 @@ Additional Prometheus and Grafana settings can be tuned via the mounted config i
 - **Port conflicts:** Override host ports with `docker compose up -d --force-recreate -p ketabmind` after editing the published ports (e.g., `8000:8000` → `8080:8000`) or set environment variable overrides via `.env`.
 - **GPU not detected (future phases):** Ensure the NVIDIA Container Toolkit is installed, start Compose with `docker compose --profile gpu up`, and set `CUDA_VISIBLE_DEVICES`/`NVIDIA_VISIBLE_DEVICES` in `.env` to target available GPUs.
 
+Phase 6 – UI & Auth
+-------------------
+
+### Running the UI
+
+- Start the entire stack (API, UI, vector store, observability) with Docker Compose:
+
+  ```bash
+  docker compose up --build
+  ```
+
+- Once services are healthy, open the Next.js frontend at `http://localhost:3000` and the FastAPI backend at `http://localhost:8000`.
+
+### Logging in
+
+- Navigate to `http://localhost:3000/login` and use one of the built-in development accounts:
+  - `alice@example.com` / `wonderland`
+  - `bob@example.com` / `builder`
+- Successful login redirects you to `/chat` and stores the authenticated session in an HttpOnly cookie.
+
+### Uploading and chatting
+
+- After signing in, go to `/upload` to submit a PDF. Provide the title, author, year, subject metadata, pick a file, and click **Upload**. When the status badge reports a successful upload, select **Index now** to launch ingestion.
+- Use the **Chat** page to create a session, send questions, and monitor the streaming answer. The UI test suite walks through the entire flow end-to-end (login → upload → index → chat) if you need an example interaction.
+
+### Citation links and deep-link viewer
+
+- Answers list citations such as `[book123:12-14]`. Each citation is rendered as a link (e.g., `/viewer?book=book123#page=12`) so you can jump directly to the referenced page. Clicking the link opens the built-in document viewer with the page anchor highlighted, enforcing access controls per user.
+
+### Security notes
+
+- Login responses set the JWT in an `HttpOnly` cookie and echo the token via an `x-csrf-token` header. The frontend must include that header on subsequent mutations to satisfy CSRF checks.
+- Book viewer links are generated as signed URLs that embed the owner, book, filename, and page along with an expiry timestamp. Requests with invalid or expired signatures are rejected.
+- The API enforces per-client rate limits. Query requests (`/query`) specifically apply an additional per-second limit so abusive clients receive a `429 Too Many Requests` response with a `Retry-After` hint.
+
 Running tests
 -------------
 
