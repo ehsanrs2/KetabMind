@@ -201,6 +201,27 @@ body.rtl .navbar__dropdown-item {
   gap: 0.75rem;
 }
 
+.chat-sessions__controls {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.chat-session-search {
+  flex: 1 1 auto;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-session-search:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
 .chat-session-list {
   list-style: none;
   margin: 0;
@@ -210,6 +231,12 @@ body.rtl .navbar__dropdown-item {
   gap: 0.5rem;
   max-height: 70vh;
   overflow-y: auto;
+}
+
+.chat-session-list__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .chat-bookmarks {
@@ -346,6 +373,24 @@ body.rtl .navbar__dropdown-item {
 .chat-session-item--active {
   border-color: #2563eb;
   background: #eff6ff;
+}
+
+.chat-session-delete {
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.chat-session-delete:hover,
+.chat-session-delete:focus-visible {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+  outline: none;
 }
 
 .chat-session-title {

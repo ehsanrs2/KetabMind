@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import gzip
@@ -12,7 +13,7 @@ import mimetypes
 import shutil
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from pathlib import Path
@@ -117,6 +118,38 @@ class _GZipMiddleware:
 
 app = FastAPI(title="KetabMind API")
 
+SESSION_CLEANUP_INTERVAL_SECONDS = 3600
+
+
+def _cleanup_expired_sessions_once() -> int:
+    retention_days = settings.history_retention_days
+    if retention_days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    with session_scope() as db_session:
+        removed = repositories.delete_sessions_older_than(
+            db_session, older_than=cutoff
+        )
+        if removed:
+            log.info(
+                "sessions.cleanup",
+                removed=removed,
+                cutoff=cutoff.isoformat(),
+            )
+        return removed
+
+
+async def _session_cleanup_worker() -> None:
+    await asyncio.sleep(5)
+    while True:
+        try:
+            _cleanup_expired_sessions_once()
+        except asyncio.CancelledError:  # pragma: no cover - cooperative cancellation
+            raise
+        except Exception:  # pragma: no cover - defensive logging
+            log.warning("sessions.cleanup_failed", exc_info=True)
+        await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+
 rate_limit_qps = settings.rate_limit_qps
 limiter_enabled = bool(rate_limit_qps and rate_limit_qps > 0)
 default_limits: list[str] = []
@@ -153,6 +186,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    if settings.history_retention_days <= 0:
+        return
+    task = asyncio.create_task(_session_cleanup_worker())
+    app.state.session_cleanup_task = task
+
+
+@app.on_event("shutdown")
+async def _on_shutdown() -> None:
+    task = getattr(app.state, "session_cleanup_task", None)
+    if task is None:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 if "REQUEST_COUNTER" not in globals():
     existing_counter = REGISTRY._names_to_collectors.get("api_requests_total")
@@ -843,6 +894,8 @@ def delete_bookmark(
 def sessions(
     current_user: Annotated[dict[str, Any], Depends(get_current_user)],
     user_id: Annotated[str | None, Query(None)] = None,
+    query: Annotated[str | None, Query(None)] = None,
+    sort: Annotated[str, Query("date_desc")] = "date_desc",
 ) -> dict[str, Any]:
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:
@@ -850,9 +903,31 @@ def sessions(
     with session_scope() as db_session:
         owner = _ensure_owner(db_session, current_user)
         repo = repositories.SessionRepository(db_session, owner.id)
-        records = repo.list()
+        allowed_sorts = {"date_desc", "date_asc", "title_asc", "title_desc"}
+        sort_key = (sort or "date_desc").strip().lower()
+        if sort_key not in allowed_sorts:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid sort parameter")
+        search = query.strip() if isinstance(query, str) else None
+        records = repo.list(
+            query=search if search else None,
+            sort=sort_key,
+        )
         payload = [_serialize_session(record, db_session) for record in records]
         return {"sessions": payload}
+
+
+@_delete("/sessions/{session_id}")
+def delete_session(
+    session_id: str,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> Response:
+    session_pk = _parse_identifier(session_id, field="session_id")
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        repo = repositories.SessionRepository(db_session, owner.id)
+        if not repo.soft_delete(session_pk):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @_post("/sessions")

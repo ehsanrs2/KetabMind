@@ -89,6 +89,9 @@ class Session(TimestampMixin, Base):
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     owner: Mapped[User] = relationship(back_populates="sessions")
     book: Mapped[Book | None] = relationship(back_populates="sessions")
