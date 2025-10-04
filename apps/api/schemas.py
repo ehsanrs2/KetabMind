@@ -51,6 +51,11 @@ class MessageCreate(BaseModel):  # type: ignore[misc]
     meta: dict[str, Any] | None = None
 
 
+class ExportRequest(BaseModel):  # type: ignore[misc]
+    message_id: int | str
+    format: str | None = "pdf"
+
+
 class BookmarkCreate(BaseModel):  # type: ignore[misc]
     message_id: int | str
     tag: str | None = None

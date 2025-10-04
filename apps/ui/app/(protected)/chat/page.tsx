@@ -749,6 +749,44 @@ export default function ChatPage() {
     [bookmarkFilterTag, bookmarkTagDraft, csrfHeaders, loadBookmarks],
   );
 
+  const handleExportAnswer = useCallback(
+    async (message: ChatMessage, requestedFormat: 'pdf' | 'word') => {
+      setError(null);
+      try {
+        const response = await fetch('/export', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...csrfHeaders,
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            message_id: message.id,
+            format: requestedFormat,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to export answer');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = requestedFormat === 'pdf' ? 'answer.pdf' : 'answer.docx';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.warn('Failed to export answer', err);
+        setError('Unable to export answer.');
+      }
+    },
+    [csrfHeaders],
+  );
+
   const handleDeleteBookmark = useCallback(
     async (bookmarkId: string) => {
       try {
@@ -1191,6 +1229,22 @@ export default function ChatPage() {
                       >
                         {isBookmarked ? 'Bookmarked' : isBookmarking ? 'Bookmarking…' : 'Bookmark'}
                       </button>
+                      <div className="chat-export-buttons">
+                        <button
+                          type="button"
+                          className="chat-export-button"
+                          onClick={() => handleExportAnswer(message, 'pdf')}
+                        >
+                          Export PDF
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-export-button"
+                          onClick={() => handleExportAnswer(message, 'word')}
+                        >
+                          Export Word
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                 </header>

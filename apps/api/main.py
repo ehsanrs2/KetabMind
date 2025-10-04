@@ -37,6 +37,7 @@ from apps.api.db.session import session_scope
 from apps.api.routes.query import build_query_response
 from apps.api.schemas import (
     BookmarkCreate,
+    ExportRequest,
     IndexRequest,
     MessageCreate,
     Metadata,
@@ -49,6 +50,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request,
 from fastapi.middleware import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from exporting import export_answer
 from sqlalchemy import func, select
 from utils.hash import sha256_file
 from utils.logging import configure_logging
@@ -998,6 +1000,54 @@ def create_session_message(
         )
         db_session.refresh(message)
         return {"message": _serialize_message(message)}
+
+
+@_post("/export")
+def export_message(
+    payload: ExportRequest,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> Response:
+    message_pk = _parse_identifier(payload.message_id, field="message_id")
+    export_format = (payload.format or "pdf").strip().lower()
+    allowed_formats = {"pdf", "word", "docx"}
+    if export_format not in allowed_formats:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported export format")
+
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        message_repo = repositories.MessageRepository(db_session, owner.id)
+        message_obj = message_repo.get(message_pk)
+        if message_obj is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+        if message_obj.role != "assistant":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Only assistant messages can be exported"
+            )
+        question_obj = message_repo.get_previous_user_message(message_obj)
+        citations = _safe_json_list(message_obj.citations) or []
+        meta = _safe_json_mapping(message_obj.meta) or {}
+        answer_payload = {
+            "question": question_obj.content if question_obj else "",
+            "answer": message_obj.content,
+            "citations": citations,
+            "meta": meta,
+        }
+        try:
+            payload_bytes = export_answer(answer_payload, format=export_format)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    if export_format == "pdf":
+        media_type = "application/pdf"
+        filename = "answer.pdf"
+    else:
+        media_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        filename = "answer.docx"
+
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    return Response(payload_bytes, media_type=media_type, headers=headers)
 
 
 @_get("/metrics")

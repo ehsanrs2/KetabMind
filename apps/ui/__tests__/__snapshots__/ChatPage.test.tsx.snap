@@ -23,6 +23,22 @@ exports[`ChatPage applies RTL styles for Persian assistant messages: persian-ass
       >
         Bookmark
       </button>
+      <div
+        class="chat-export-buttons"
+      >
+        <button
+          class="chat-export-button"
+          type="button"
+        >
+          Export PDF
+        </button>
+        <button
+          class="chat-export-button"
+          type="button"
+        >
+          Export Word
+        </button>
+      </div>
     </div>
   </header>
   <div
@@ -58,6 +74,22 @@ exports[`ChatPage keeps LTR layout for non-Persian assistant messages: non-persi
       >
         Bookmark
       </button>
+      <div
+        class="chat-export-buttons"
+      >
+        <button
+          class="chat-export-button"
+          type="button"
+        >
+          Export PDF
+        </button>
+        <button
+          class="chat-export-button"
+          type="button"
+        >
+          Export Word
+        </button>
+      </div>
     </div>
   </header>
   <div

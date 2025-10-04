@@ -522,6 +522,36 @@ body.rtl .navbar__dropdown-item {
   gap: 0.5rem;
 }
 
+.chat-export-buttons {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.chat-export-button {
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #1f2937;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.chat-export-button:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.chat-export-button:active {
+  background: #e5e7eb;
+}
+
+.chat-export-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .chat-message--assistant {
   border-left: 4px solid #2563eb;
 }
