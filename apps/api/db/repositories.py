@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from . import models
@@ -101,20 +102,54 @@ class BookVersionRepository(_BaseRepository):
 class SessionRepository(_BaseRepository):
     model = models.Session
 
-    def list(self) -> list[models.Session]:
-        stmt = (
-            select(models.Session)
-            .where(models.Session.owner_id == self.owner_id)
-            .order_by(models.Session.id)
-        )
+    def list(
+        self,
+        *,
+        query: str | None = None,
+        sort: str = "date_desc",
+        include_deleted: bool = False,
+    ) -> list[models.Session]:
+        stmt = select(models.Session).where(models.Session.owner_id == self.owner_id)
+        if not include_deleted:
+            stmt = stmt.where(models.Session.deleted_at.is_(None))
+        if query:
+            search_term = query.strip()
+            if search_term:
+                pattern = f"%{search_term}%"
+                stmt = stmt.where(models.Session.title.ilike(pattern))
+
+        sort_key = sort.lower().strip() if sort else "date_desc"
+        if sort_key == "date_asc":
+            stmt = stmt.order_by(models.Session.created_at.asc(), models.Session.id.asc())
+        elif sort_key == "title_asc":
+            stmt = stmt.order_by(func.lower(models.Session.title).asc(), models.Session.id.asc())
+        elif sort_key == "title_desc":
+            stmt = stmt.order_by(func.lower(models.Session.title).desc(), models.Session.id.asc())
+        else:  # default to date_desc
+            stmt = stmt.order_by(models.Session.created_at.desc(), models.Session.id.desc())
+
         return self._all(stmt)
 
-    def get(self, session_id: int) -> models.Session | None:
+    def get(
+        self, session_id: int, *, include_deleted: bool = False
+    ) -> models.Session | None:
         stmt = select(models.Session).where(
             models.Session.id == session_id,
             models.Session.owner_id == self.owner_id,
         )
+        if not include_deleted:
+            stmt = stmt.where(models.Session.deleted_at.is_(None))
         return self._one(stmt)
+
+    def soft_delete(self, session_id: int) -> bool:
+        record = self.get(session_id)
+        if record is None:
+            return False
+        if record.deleted_at is not None:
+            return False
+        record.deleted_at = datetime.now(timezone.utc)
+        self.session.add(record)
+        return True
 
     def create(self, *, title: str, book_id: int | None = None) -> models.Session:
         book_ref: models.Book | None = None
@@ -222,6 +257,23 @@ class MessageRepository(_BaseRepository):
         self.session.add(message)
         self.session.flush()
         return message
+
+
+def delete_sessions_older_than(session: Session, *, older_than: datetime) -> int:
+    cutoff_value = older_than
+    if isinstance(older_than, datetime) and older_than.tzinfo is not None:
+        cutoff_value = older_than.astimezone(timezone.utc)
+        bind = session.get_bind()
+        if bind is not None and bind.dialect.name == "sqlite":
+            cutoff_value = cutoff_value.replace(tzinfo=None)
+
+    stmt = (
+        delete(models.Session)
+        .where(models.Session.created_at < cutoff_value)
+        .execution_options(synchronize_session=False)
+    )
+    result = session.execute(stmt)
+    return int(result.rowcount or 0)
 
 
 __all__ = [

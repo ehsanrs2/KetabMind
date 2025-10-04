@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ChangeEvent,
   FormEvent,
   useCallback,
   useEffect,
@@ -383,6 +384,7 @@ function normaliseBookmark(item: BookmarksResponse['bookmarks'][number]): Bookma
 export default function ChatPage() {
   const { csrfToken } = useAuth();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionSearch, setSessionSearch] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState('');
@@ -401,6 +403,10 @@ export default function ChatPage() {
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useRTL(language);
+
+  const handleSessionSearchChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setSessionSearch(event.target.value);
+  }, []);
 
   const bookmarkedMessageIds = useMemo(
     () => new Set(bookmarks.map((bookmark) => bookmark.message.id)),
@@ -446,37 +452,46 @@ export default function ChatPage() {
     }
   }, []);
 
-  const loadSessions = useCallback(async () => {
-    try {
-      const response = await fetch('/sessions', {
-        credentials: 'include',
-      });
+  const loadSessions = useCallback(
+    async (options?: { query?: string }) => {
+      try {
+        const params = new URLSearchParams({ sort: 'date_desc' });
+        const search = options?.query?.trim();
+        if (search) {
+          params.set('query', search);
+        }
 
-      if (!response.ok) {
-        throw new Error('Failed to load sessions');
+        const response = await fetch(`/sessions?${params.toString()}`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load sessions');
+        }
+
+        const payload = (await response.json()) as SessionsResponse;
+        const mapped = (payload.sessions ?? [])
+          .map(normaliseSession)
+          .filter((item): item is SessionSummary => item !== null);
+
+        setSessions(mapped);
+
+        setSelectedSessionId((current) => {
+          if (current && mapped.some((session) => session.id === current)) {
+            return current;
+          }
+          if (mapped.length > 0) {
+            return mapped[0].id;
+          }
+          return null;
+        });
+      } catch (err) {
+        console.warn('Failed to load sessions', err);
+        setError('Unable to load sessions.');
       }
-
-      const payload = (await response.json()) as SessionsResponse;
-      const mapped = (payload.sessions ?? [])
-        .map(normaliseSession)
-        .filter((item): item is SessionSummary => item !== null);
-
-      setSessions(mapped);
-
-      setSelectedSessionId((current) => {
-        if (current && mapped.some((session) => session.id === current)) {
-          return current;
-        }
-        if (mapped.length > 0) {
-          return mapped[0].id;
-        }
-        return null;
-      });
-    } catch (err) {
-      console.warn('Failed to load sessions', err);
-      setError('Unable to load sessions.');
-    }
-  }, []);
+    },
+    [],
+  );
 
   const loadMessages = useCallback(
     async (sessionId: string) => {
@@ -527,8 +542,8 @@ export default function ChatPage() {
   );
 
   useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+    void loadSessions({ query: sessionSearch });
+  }, [loadSessions, sessionSearch]);
 
   useEffect(() => {
     loadBookmarks();
@@ -737,13 +752,13 @@ export default function ChatPage() {
         setActiveBookmarkMessageId(null);
         setPendingScrollMessageId(null);
       } else {
-        await loadSessions();
+        await loadSessions({ query: sessionSearch });
       }
     } catch (err) {
       console.warn('Failed to create session', err);
       setError('Unable to create a new session.');
     }
-  }, [csrfHeaders, isStreaming, loadSessions]);
+  }, [csrfHeaders, isStreaming, loadSessions, sessionSearch]);
 
   const handleSelectSession = useCallback(
     (sessionId: string) => {
@@ -759,6 +774,36 @@ export default function ChatPage() {
       setActiveBookmarkMessageId(null);
     },
     [isStreaming, selectedSessionId],
+  );
+
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      if (isStreaming) {
+        abortControllerRef.current?.abort();
+      }
+
+      try {
+        const response = await fetch(`/sessions/${sessionId}`, {
+          method: 'DELETE',
+          headers: csrfHeaders,
+          credentials: 'include',
+        });
+
+        if (response.status === 404) {
+          throw new Error('Session not found');
+        }
+
+        if (!response.ok) {
+          throw new Error('Failed to delete session');
+        }
+
+        await loadSessions({ query: sessionSearch });
+      } catch (err) {
+        console.warn('Failed to delete session', err);
+        setError('Unable to delete session.');
+      }
+    },
+    [csrfHeaders, isStreaming, loadSessions, sessionSearch],
   );
 
   const handleSubmit = useCallback(
@@ -933,7 +978,7 @@ export default function ChatPage() {
         };
 
         await persistMessage(selectedSessionId, assistantToPersist);
-        await loadSessions();
+        await loadSessions({ query: sessionSearch });
       } catch (err) {
         console.warn('Chat request failed', err);
         setError('Chat failed. Please try again.');
@@ -952,7 +997,16 @@ export default function ChatPage() {
         setIsStreaming(false);
       }
     },
-    [csrfHeaders, debugEnabled, isStreaming, loadSessions, persistMessage, prompt, selectedSessionId],
+    [
+      csrfHeaders,
+      debugEnabled,
+      isStreaming,
+      loadSessions,
+      persistMessage,
+      prompt,
+      selectedSessionId,
+      sessionSearch,
+    ],
   );
 
   return (
@@ -964,11 +1018,21 @@ export default function ChatPage() {
             New Session
           </button>
         </div>
+        <div className="chat-sessions__controls">
+          <input
+            type="search"
+            className="chat-session-search"
+            placeholder="Search sessions"
+            value={sessionSearch}
+            onChange={handleSessionSearchChange}
+            aria-label="Search sessions"
+          />
+        </div>
         <ul className="chat-session-list">
           {sessions.map((session) => {
             const isActive = session.id === selectedSessionId;
             return (
-              <li key={session.id}>
+              <li key={session.id} className="chat-session-list__item">
                 <button
                   type="button"
                   className={`chat-session-item${isActive ? ' chat-session-item--active' : ''}`}
@@ -978,6 +1042,17 @@ export default function ChatPage() {
                   <span className="chat-session-activity">
                     {formatLastActivity(session.lastActivity)}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  className="chat-session-delete"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleDeleteSession(session.id);
+                  }}
+                  aria-label={`Delete session ${session.title}`}
+                >
+                  Delete
                 </button>
               </li>
             );

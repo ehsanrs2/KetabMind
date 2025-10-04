@@ -160,6 +160,7 @@ class Settings(BaseSettingsProto):  # type: ignore[misc]
     upload_signed_url_ttl: int = 300
 
     database_url: str = "sqlite:///./data/app.db"
+    history_retention_days: int = 30
 
     auth_required: bool = False
     jwt_secret: str = "change-me"

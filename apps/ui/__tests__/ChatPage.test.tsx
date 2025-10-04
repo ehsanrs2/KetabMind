@@ -86,32 +86,28 @@ describe('ChatPage', () => {
 
     const fetchMock = jest.spyOn(globalThis, 'fetch');
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url;
-      const method = init?.method ?? 'GET';
+      const raw =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+          ? input.toString()
+          : input.url;
+      let url = raw;
+      if (/^https?:/i.test(raw)) {
+        const parsed = new URL(raw);
+        url = `${parsed.pathname}${parsed.search}`;
+      }
+      const method = (init?.method ?? 'GET').toUpperCase();
 
       if (url === '/bookmarks' && method === 'GET') {
         return Promise.resolve(createJsonResponse({ bookmarks: [] }));
       }
 
-      if (url === '/sessions' && method === 'GET') {
-        return Promise.resolve(
-          createJsonResponse({
-            sessions: [
-              {
-                id: '1',
-                title: 'Mock Session',
-                last_activity: '2024-01-01T00:00:00Z',
-              },
-            ],
-          }),
-        );
-      }
-
-      if (url === '/sessions/1/messages' && method === 'GET') {
+      if (url.startsWith('/sessions/1/messages') && method === 'GET') {
         return Promise.resolve(createJsonResponse({ messages: [] }));
       }
 
-      if (url === '/sessions/1/messages' && method === 'POST') {
+      if (url.startsWith('/sessions/1/messages') && method === 'POST') {
         postBodies.push(typeof init?.body === 'string' ? init?.body : undefined);
         const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
         const role = payload?.role;
@@ -162,8 +158,26 @@ describe('ChatPage', () => {
         );
       }
 
-      if (url === '/sessions' && method === 'POST') {
+      if (url.startsWith('/sessions') && method === 'GET') {
+        return Promise.resolve(
+          createJsonResponse({
+            sessions: [
+              {
+                id: '1',
+                title: 'Mock Session',
+                last_activity: '2024-01-01T00:00:00Z',
+              },
+            ],
+          }),
+        );
+      }
+
+      if (url.startsWith('/sessions') && method === 'POST') {
         return Promise.resolve(createJsonResponse({ id: '2', title: 'New Session' }));
+      }
+
+      if (url.startsWith('/sessions/') && method === 'DELETE') {
+        return Promise.resolve(new Response(null, { status: 204 }));
       }
 
       if (url.startsWith('/query')) {
@@ -270,32 +284,24 @@ describe('ChatPage', () => {
     jest
       .spyOn(globalThis, 'fetch')
       .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
+        const raw =
           typeof input === 'string'
             ? input
             : input instanceof URL
-              ? input.pathname
+              ? input.toString()
               : input.url;
-        const method = init?.method ?? 'GET';
+        let url = raw;
+        if (/^https?:/i.test(raw)) {
+          const parsed = new URL(raw);
+          url = `${parsed.pathname}${parsed.search}`;
+        }
+        const method = (init?.method ?? 'GET').toUpperCase();
 
         if (url === '/bookmarks' && method === 'GET') {
           return Promise.resolve(createJsonResponse({ bookmarks: [] }));
         }
 
-        if (url === '/sessions' && method === 'GET') {
-          return Promise.resolve(
-            createJsonResponse({
-              sessions: [
-                {
-                  id: '1',
-                  title: 'Mock Session',
-                },
-              ],
-            }),
-          );
-        }
-
-        if (url === '/sessions/1/messages' && method === 'GET') {
+        if (url.startsWith('/sessions/1/messages') && method === 'GET') {
           return Promise.resolve(
             createJsonResponse({
               messages: [
@@ -304,6 +310,19 @@ describe('ChatPage', () => {
                   role: 'assistant',
                   content: 'پاسخ فارسی',
                   meta: { lang: 'fa' },
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url.startsWith('/sessions') && method === 'GET') {
+          return Promise.resolve(
+            createJsonResponse({
+              sessions: [
+                {
+                  id: '1',
+                  title: 'Mock Session',
                 },
               ],
             }),
@@ -324,32 +343,24 @@ describe('ChatPage', () => {
     jest
       .spyOn(globalThis, 'fetch')
       .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
+        const raw =
           typeof input === 'string'
             ? input
             : input instanceof URL
-              ? input.pathname
+              ? input.toString()
               : input.url;
-        const method = init?.method ?? 'GET';
+        let url = raw;
+        if (/^https?:/i.test(raw)) {
+          const parsed = new URL(raw);
+          url = `${parsed.pathname}${parsed.search}`;
+        }
+        const method = (init?.method ?? 'GET').toUpperCase();
 
         if (url === '/bookmarks' && method === 'GET') {
           return Promise.resolve(createJsonResponse({ bookmarks: [] }));
         }
 
-        if (url === '/sessions' && method === 'GET') {
-          return Promise.resolve(
-            createJsonResponse({
-              sessions: [
-                {
-                  id: '1',
-                  title: 'Mock Session',
-                },
-              ],
-            }),
-          );
-        }
-
-        if (url === '/sessions/1/messages' && method === 'GET') {
+        if (url.startsWith('/sessions/1/messages') && method === 'GET') {
           return Promise.resolve(
             createJsonResponse({
               messages: [
@@ -358,6 +369,19 @@ describe('ChatPage', () => {
                   role: 'assistant',
                   content: 'English answer',
                   meta: { lang: 'en' },
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url.startsWith('/sessions') && method === 'GET') {
+          return Promise.resolve(
+            createJsonResponse({
+              sessions: [
+                {
+                  id: '1',
+                  title: 'Mock Session',
                 },
               ],
             }),
