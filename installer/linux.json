@@ -1,0 +1,15 @@
+{
+  "appId": "com.ketabmind.desktop",
+  "productName": "KetabMind Desktop",
+  "directories": {
+    "output": "dist"
+  },
+  "artifactName": "ketabmind-desktop-${version}-linux-${arch}.${ext}",
+  "files": [
+    "apps/ui/.next/**",
+    "backend/**",
+    "resources/**",
+    "package.json",
+    "pyproject.toml"
+  ]
+}

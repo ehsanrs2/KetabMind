@@ -1,0 +1,9 @@
+{
+  "extends": "./linux.json",
+  "artifactName": "ketabmind-desktop-${version}-win-${arch}.${ext}",
+  "win": {
+    "target": [
+      "nsis"
+    ]
+  }
+}
