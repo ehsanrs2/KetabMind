@@ -1,0 +1,4 @@
+{
+  "extends": "./linux.json",
+  "artifactName": "ketabmind-desktop-${version}-mac-${arch}.${ext}"
+}
