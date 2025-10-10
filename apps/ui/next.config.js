@@ -28,6 +28,18 @@ const config = {
       rewrite('/ready', '/ready'),
     ];
   },
+  webpack(nextConfig) {
+    if (!nextConfig.resolve) {
+      nextConfig.resolve = {};
+    }
+
+    nextConfig.resolve.fallback = {
+      ...(nextConfig.resolve.fallback || {}),
+      canvas: false,
+    };
+
+    return nextConfig;
+  },
 };
 
 module.exports = config;
