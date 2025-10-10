@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { refresh, loading, user } = useAuth();
@@ -13,11 +13,13 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const redirectTo = searchParams?.get('next') || '/chat';
+  const redirectTo = useMemo(() => searchParams?.get('next') || '/chat', [searchParams]);
 
-  if (!loading && user) {
-    router.replace(redirectTo);
-  }
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace(redirectTo);
+    }
+  }, [loading, redirectTo, router, user]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -76,5 +78,19 @@ export default function LoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="page-card">
+          <h1>Login</h1>
+        </div>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }
