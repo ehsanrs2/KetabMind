@@ -230,6 +230,11 @@ Phase 5 – System & DevOps
   docker compose up --build
   ```
 
+- Qdrant state is stored in the named Docker volume `ketabmind_qdrant_data`. Use
+  `docker volume inspect ketabmind_qdrant_data` or `docker run --rm -v
+  ketabmind_qdrant_data:/data alpine ls /data` if you need to examine or back up
+  the on-disk collections.
+
 - Orchestrate via Makefile helpers:
 
   ```bash

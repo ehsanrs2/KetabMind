@@ -46,7 +46,7 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./data/qdrant:/qdrant/storage
+      - qdrant_data:/qdrant/storage
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
       interval: 30s
@@ -100,3 +100,4 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  qdrant_data:
