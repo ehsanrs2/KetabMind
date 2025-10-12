@@ -48,7 +48,6 @@ from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
 from core.fts import get_backend as get_fts_backend
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
-from fastapi.middleware import RequestIDMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from exporting import export_answer
@@ -56,6 +55,9 @@ from sqlalchemy import func, select
 from utils.hash import sha256_file
 from utils.logging import configure_logging
 from utils.pydantic_compat import BaseModel
+from apps.api.middleware import RequestIDMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
 if TYPE_CHECKING:
     from core.index import IndexResult as IndexResultType
@@ -87,12 +89,12 @@ def _client_identifier(request: Request) -> str:
     return "127.0.0.1"
 
 
-class _GZipMiddleware:
-    def __init__(self, app: Any, minimum_size: int = 500) -> None:
-        self.app = app
+class _GZipMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: ASGIApp, minimum_size: int = 500) -> None:
+        super().__init__(app)
         self.minimum_size = minimum_size
 
-    async def __call__(self, request: Request, call_next: Callable[[Request], Any]) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Any]) -> Response:
         response = await call_next(request)
         body = getattr(response, "_content", None)
         if body is None:
@@ -282,13 +284,16 @@ def _post(path: str) -> Callable[[F], F]:
 
 
 def _delete(path: str) -> Callable[[F], F]:
+    delete_handler = getattr(app, "delete", None)
+    if callable(delete_handler):
+        return cast(Callable[[F], F], delete_handler(path))
+
     def decorator(func: F) -> F:
         add_route = getattr(app, "_add_route", None)
         if callable(add_route):
             add_route("DELETE", path, func)
-        else:  # pragma: no cover - defensive for unsupported stubs
-            raise RuntimeError("DELETE method not supported by FastAPI stub")
-        return func
+            return func
+        raise RuntimeError("DELETE method not supported by FastAPI stub")
 
     return decorator
 
@@ -655,8 +660,8 @@ def logout() -> JSONResponse:
 @_get("/search")
 def search_pages(
     query: Annotated[str, Query(..., min_length=1)],
-    book_id: Annotated[str | None, Query(None)] = None,
-    limit: Annotated[int | None, Query(None, ge=1, le=100)] = None,
+    book_id: Annotated[str | None, Query()] = None,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     _user: Annotated[dict[str, Any], Depends(get_current_user)] | None = None,
 ) -> dict[str, Any]:
     backend = get_fts_backend()
@@ -695,9 +700,9 @@ def search_pages(
 def query(
     req: QueryRequest,
     request: Request,
-    stream: Annotated[bool, Query(False)],
-    debug: Annotated[bool, Query(False)],
     _user: Annotated[dict[str, Any], Depends(get_current_user)],
+    stream: Annotated[bool, Query()] = False,
+    debug: Annotated[bool, Query()] = False,
 ) -> Any:
     retry_after = _enforce_limit(_QUERY_RATE_LIMIT, request)
     if retry_after is not None:
@@ -781,10 +786,10 @@ def index(
 
 
 def _upload_metadata(
-    author: Annotated[str | None, Form(None)] = None,
-    year: Annotated[str | None, Form(None)] = None,
-    subject: Annotated[str | None, Form(None)] = None,
-    title: Annotated[str | None, Form(None)] = None,
+    author: Annotated[str | None, Form()] = None,
+    year: Annotated[str | None, Form()] = None,
+    subject: Annotated[str | None, Form()] = None,
+    title: Annotated[str | None, Form()] = None,
 ) -> Metadata:
     return Metadata(author=author, year=year, subject=subject, title=title)
 
@@ -885,8 +890,8 @@ def serve_book_asset(token: str) -> Response:
 @_get("/bookmarks")
 def bookmarks(
     current_user: Annotated[dict[str, Any], Depends(get_current_user)],
-    user_id: Annotated[str | None, Query(None)] = None,
-    tag: Annotated[str | None, Query(None)] = None,
+    user_id: Annotated[str | None, Query()] = None,
+    tag: Annotated[str | None, Query()] = None,
 ) -> dict[str, Any]:
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:
@@ -939,9 +944,9 @@ def delete_bookmark(
 @_get("/sessions")
 def sessions(
     current_user: Annotated[dict[str, Any], Depends(get_current_user)],
-    user_id: Annotated[str | None, Query(None)] = None,
-    query: Annotated[str | None, Query(None)] = None,
-    sort: Annotated[str, Query("date_desc")] = "date_desc",
+    user_id: Annotated[str | None, Query()] = None,
+    query: Annotated[str | None, Query()] = None,
+    sort: Annotated[str, Query()] = "date_desc",
 ) -> dict[str, Any]:
     target_id = user_id or current_user["id"]
     if target_id != current_user["id"]:

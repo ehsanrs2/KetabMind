@@ -150,6 +150,8 @@ class Settings(BaseSettingsProto):  # type: ignore[misc]
     llm_max_new_tokens: int = 256
     llm_temperature: float = 0.2
     llm_top_p: float = 0.95
+    llm_device: str | None = None
+    llm_load_in_4bit: bool = True
     ollama_host: str = "http://localhost:11434"
 
     chunk_size: int = 800
