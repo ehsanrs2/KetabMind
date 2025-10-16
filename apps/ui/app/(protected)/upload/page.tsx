@@ -9,10 +9,11 @@ type UploadResponse = {
   version?: number | string;
   file_hash?: string;
   message?: string;
-  detail?: string;
+  detail?: unknown;
   already_indexed?: boolean;
   deduplicated?: boolean;
   duplicate?: boolean;
+  error?: unknown;
   [key: string]: unknown;
 };
 
@@ -34,18 +35,18 @@ const INITIAL_FORM = {
 };
 
 function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
-  const { response } = xhr;
+  const rawResponse = (xhr.response ?? xhr.responseText) as unknown;
 
-  if (response == null) {
+  if (rawResponse == null) {
     return null;
   }
 
-  if (typeof response === 'object') {
-    return response as UploadResponse;
+  if (typeof rawResponse === 'object') {
+    return rawResponse as UploadResponse;
   }
 
-  const text = String(response);
-  if (!text) {
+  const text = String(rawResponse);
+  if (!text.trim()) {
     return null;
   }
 
@@ -58,14 +59,79 @@ function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
   }
 }
 
+function isLikelyHtml(text: string): boolean {
+  const trimmed = text.trim();
+  return /^<!DOCTYPE html/i.test(trimmed) || /^<html/i.test(trimmed);
+}
+
+function normalizeMessage(text: string | null | undefined, fallback: string): string {
+  if (!text) {
+    return fallback;
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed || isLikelyHtml(trimmed)) {
+    return fallback;
+  }
+
+  return trimmed;
+}
+
+function extractFromDetail(detail: unknown): string | null {
+  if (typeof detail === 'string') {
+    const trimmed = detail.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (Array.isArray(detail)) {
+    for (const item of detail) {
+      const candidate = extractFromDetail(
+        typeof item === 'object' && item !== null
+          ? (item as Record<string, unknown>).msg ??
+            (item as Record<string, unknown>).message ??
+            (item as Record<string, unknown>).detail ??
+            item
+          : item,
+      );
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  if (typeof detail === 'object' && detail !== null) {
+    const record = detail as Record<string, unknown>;
+    return (
+      extractFromDetail(record.msg) ??
+      extractFromDetail(record.message) ??
+      extractFromDetail(record.detail)
+    );
+  }
+
+  return null;
+}
+
 function extractMessage(payload: UploadResponse | null, fallback: string): string {
   if (payload) {
-    if (typeof payload.detail === 'string' && payload.detail.trim().length > 0) {
-      return payload.detail;
+    const detailMessage = extractFromDetail(payload.detail);
+    if (detailMessage) {
+      return normalizeMessage(detailMessage, fallback);
     }
 
-    if (typeof payload.message === 'string' && payload.message.trim().length > 0) {
-      return payload.message;
+    if (typeof payload.message === 'string') {
+      return normalizeMessage(payload.message, fallback);
+    }
+
+    if (
+      typeof payload.error === 'object' &&
+      payload.error !== null &&
+      'message' in (payload.error as Record<string, unknown>)
+    ) {
+      return normalizeMessage(
+        String((payload.error as Record<string, unknown>).message ?? ''),
+        fallback,
+      );
     }
   }
 
@@ -133,7 +199,7 @@ export default function UploadPage() {
     try {
       const payload = await new Promise<UploadResponse>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/upload');
+        xhr.open('POST', '/api/upload');
         xhr.responseType = 'text';
         xhr.withCredentials = true;
 
@@ -195,11 +261,19 @@ export default function UploadPage() {
       return;
     }
 
+    if (!uploadResponse.file_hash) {
+      setIndexStatus({
+        type: 'error',
+        message: 'Unable to trigger indexing: missing file hash.',
+      });
+      return;
+    }
+
     setIsIndexing(true);
     setIndexStatus(null);
 
     try {
-      const response = await fetch('/index', {
+      const response = await fetch('/api/index', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -237,7 +311,7 @@ export default function UploadPage() {
     } finally {
       setIsIndexing(false);
     }
-  }, [uploadResponse]);
+  }, [csrfToken, uploadResponse]);
 
   const clampedProgress = progress === null ? 0 : Math.min(100, Math.max(0, progress));
   const progressFillStyle = useMemo(

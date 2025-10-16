@@ -25,12 +25,14 @@ class Metadata(BaseModel):  # type: ignore[misc]
 
 
 class IndexRequest(BaseModel):  # type: ignore[misc]
-    path: str
+    path: str | None = None
     collection: str | None = None
     author: str | None = None
     year: int | str | None = None
     subject: str | None = None
     title: str | None = None
+    book_id: str | None = None
+    file_hash: str | None = None
 
     def metadata(self) -> dict[str, Any]:
         """Return metadata payload cleaned of empty values."""
