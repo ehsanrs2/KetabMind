@@ -288,22 +288,49 @@ export default function UploadPage() {
       });
 
       const text = await response.text();
-      let json: UploadResponse | null = null;
+      let json: Record<string, unknown> | null = null;
       if (text) {
         try {
-          json = JSON.parse(text) as UploadResponse;
+          json = JSON.parse(text) as Record<string, unknown>;
         } catch (error) {
           console.warn('Failed to parse index response', error);
         }
       }
 
       if (!response.ok) {
-        throw new Error(extractMessage(json, `Indexing failed with status ${response.status}`));
+        throw new Error(
+          extractMessage(json as UploadResponse | null, `Indexing failed with status ${response.status}`),
+        );
+      }
+
+      let indexMessage = 'Indexing started.';
+      if (json && typeof json === 'object') {
+        const indexedField = json.indexed;
+        if (typeof indexedField === 'boolean') {
+          indexMessage = indexedField ? 'Indexing completed.' : 'Indexing failed.';
+        } else {
+          const newCount = json.new;
+          const skippedCount = json.skipped;
+          if (typeof newCount === 'number' || typeof skippedCount === 'number') {
+            const parts: string[] = [];
+            if (typeof newCount === 'number') {
+              parts.push(`${newCount} new`);
+            }
+            if (typeof skippedCount === 'number') {
+              parts.push(`${skippedCount} skipped`);
+            }
+            indexMessage = `Indexing completed: ${parts.join(', ')}.`;
+          } else {
+            indexMessage = extractMessage(json as UploadResponse | null, 'Indexing started.');
+          }
+        }
+      } else {
+        indexMessage = extractMessage(json as UploadResponse | null, 'Indexing started.');
       }
 
       setIndexStatus({
         type: 'success',
-        message: extractMessage(json, 'Indexing started.'),
+        message: indexMessage,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Indexing failed.';
