@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -60,7 +62,22 @@ class QueryResponse(BaseModel):
     response: str
 
 
+class Session(BaseModel):
+    """Payload representing a single chat session."""
+
+    id: str = Field(..., description="Unique identifier for the session")
+    title: str = Field(..., description="Human-friendly session title")
+    created_at: datetime = Field(..., description="UTC timestamp marking session creation")
+
+
+class SessionCreate(BaseModel):
+    """Request payload for creating a new chat session."""
+
+    title: str = Field(..., description="Title assigned to the new session")
+
+
 app = FastAPI(title="KetabMind Local API")
+SESSIONS: list[Session] = []
 
 
 @app.get("/health")
@@ -118,10 +135,41 @@ def query(request: QueryRequest) -> dict[str, Any]:
     return response.model_dump()
 
 
+@app.get("/sessions", response_model=list[Session])
+def list_sessions() -> list[Session]:
+    """Return all stored chat sessions."""
+
+    return SESSIONS
+
+
+@app.post("/sessions", response_model=Session, status_code=status.HTTP_201_CREATED)
+def create_session(payload: SessionCreate) -> Session:
+    """Create and persist an in-memory chat session."""
+
+    session = Session(id=str(uuid4()), title=payload.title, created_at=datetime.utcnow())
+    SESSIONS.append(session)
+    return session
+
+
+@app.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(session_id: str) -> None:
+    """Remove the chat session matching the provided identifier."""
+
+    for index, session in enumerate(SESSIONS):
+        if session.id == session_id:
+            del SESSIONS[index]
+            break
+    else:  # pragma: no cover - simple branch
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+
 __all__ = [
     "app",
+    "create_session",
+    "delete_session",
     "health",
     "index",
+    "list_sessions",
     "query",
     "upload",
     "version",
