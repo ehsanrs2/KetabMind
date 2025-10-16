@@ -154,7 +154,7 @@ describe('UploadPage', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/index',
+      '/api/index',
       expect.objectContaining({
         method: 'POST',
       }),
@@ -225,5 +225,31 @@ describe('UploadPage', () => {
     });
 
     expect(screen.queryByTestId('upload-result-book-id')).not.toBeInTheDocument();
+  });
+
+  it('falls back to a generic message when server returns HTML', async () => {
+    const user = userEvent.setup();
+    render(<UploadPage />);
+
+    await fillForm(user, {
+      title: 'Broken HTML',
+      author: 'Jane Smith',
+      year: '2022',
+      subject: 'Poetry',
+      file: new File(['content'], 'broken.pdf', { type: 'application/pdf' }),
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /upload/i }));
+    });
+
+    const xhr = MockXMLHttpRequest.instances[0];
+    expect(xhr).toBeDefined();
+
+    act(() => {
+      xhr.simulateResponse(404, '<!DOCTYPE html><html><body>Not Found</body></html>');
+    });
+
+    await screen.findByText(/upload failed with status 404/i);
   });
 });

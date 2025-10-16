@@ -474,6 +474,12 @@ def _index_path(*args: Any, **kwargs: Any) -> IndexResultType:
     return _index(*args, **kwargs)
 
 
+def _reindex_existing_file(*args: Any, **kwargs: Any) -> IndexResultType:
+    from core.index import reindex_existing_file as _reindex
+
+    return _reindex(*args, **kwargs)
+
+
 def _update_indexed_path(*args: Any, **kwargs: Any) -> None:
     from core.index import update_indexed_file_path as _update
 
@@ -757,11 +763,15 @@ def index(
     req: IndexRequest,
     _user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, Any]:
-    try:
+    collection = req.collection or settings.qdrant_collection
+    owner_id = str(_user.get("id") or "")
+    if not owner_id:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
+
+    if req.path:
         path = Path(req.path)
         if not path.exists():
-            raise SystemExit(f"File not found: {path}")
-        collection = req.collection or settings.qdrant_collection
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"File not found: {path}")
         file_hash = sha256_file(path)
         existing = _find_indexed_file(collection, file_hash)
         if existing:
@@ -774,14 +784,68 @@ def index(
                 "file_hash": existing.file_hash,
                 "indexed_chunks": existing.indexed_chunks,
             }
-        result = _index_path(
-            path,
-            collection=collection,
-            file_hash=file_hash,
-            metadata=req.metadata(),
+        try:
+            result = _index_path(
+                path,
+                collection=collection,
+                file_hash=file_hash,
+                metadata=req.metadata(),
+            )
+        except SystemExit as exc:  # invalid path or type
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return _serialize_index_result(result)
+
+    if not req.file_hash:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="file_hash is required when path is not provided",
         )
-    except SystemExit as exc:  # invalid path or type
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    existing = _find_indexed_file(collection, req.file_hash)
+    if not existing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Indexed file not found")
+
+    if req.book_id and str(req.book_id) != existing.book_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Book ID does not match stored record",
+        )
+
+    stored_path = existing.path
+    if stored_path is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="Stored file path unavailable for reindexing",
+        )
+
+    root = _ensure_upload_root()
+    stored_path = stored_path.resolve()
+    try:
+        stored_path.relative_to(root / owner_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Forbidden") from exc
+
+    if not stored_path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Stored file not found")
+
+    request_meta = req.metadata()
+    merged_meta: dict[str, Any] = {}
+    if isinstance(existing.metadata, dict):
+        merged_meta.update(existing.metadata)
+    if request_meta:
+        merged_meta.update(request_meta)
+
+    meta_arg = merged_meta if merged_meta else None
+
+    try:
+        result = _reindex_existing_file(
+            collection=collection,
+            file_hash=req.file_hash,
+            metadata=meta_arg,
+        )
+    except SystemExit as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     return _serialize_index_result(result)
 
 

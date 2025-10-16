@@ -76,6 +76,8 @@ class IndexedFile:
     version: str
     file_hash: str
     indexed_chunks: int
+    path: Path | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -110,6 +112,10 @@ def index_path(
     *,
     file_hash: str | None = None,
     metadata: Mapping[str, Any] | None = None,
+    book_id: str | None = None,
+    version: str | None = None,
+    force: bool = False,
+    replace_existing: bool = False,
 ) -> IndexResult:
     """Index a file path into Qdrant.
 
@@ -124,15 +130,15 @@ def index_path(
     manifest = _load_manifest()
     manifest_key = _manifest_key(store_collection, file_hash)
     cached = manifest.get(manifest_key)
-    if cached:
-        book_id = str(cached.get("book_id"))
-        version = str(cached.get("version"))
+    if cached and not force:
+        cached_book_id = str(cached.get("book_id"))
+        cached_version = str(cached.get("version"))
         indexed_chunks = int(cached.get("indexed_chunks", 0)) or int(cached.get("chunks", 0))
         skipped_count = indexed_chunks or 1
         log.info(
             "indexed",
-            book_id=book_id,
-            version=version,
+            book_id=cached_book_id,
+            version=cached_version,
             new=0,
             skipped=skipped_count,
             total=skipped_count,
@@ -141,14 +147,17 @@ def index_path(
             new=0,
             skipped=skipped_count,
             collection=store_collection,
-            book_id=book_id,
-            version=version,
+            book_id=cached_book_id,
+            version=cached_version,
             file_hash=file_hash,
             indexed_chunks=skipped_count,
         )
 
-    book_id = str(uuid.uuid4())
-    version = _new_version()
+    if cached and force:
+        manifest.pop(manifest_key, None)
+
+    book_identifier = book_id or str(uuid.uuid4())
+    version_identifier = version or _new_version()
     meta_payload = _clean_metadata(metadata)
 
     if in_path.suffix.lower() == ".pdf":
@@ -164,27 +173,27 @@ def index_path(
     if fts_backend.is_available():
         try:
             fts_backend.index_book(
-                book_id,
+                book_identifier,
                 [(page.page_num, page.text) for page in pages],
             )
         except Exception:  # pragma: no cover - defensive logging
-            log.warning("fts.index_failed", book_id=book_id, exc_info=True)
+            log.warning("fts.index_failed", book_id=book_identifier, exc_info=True)
 
     records = pages_to_records(
         pages,
-        book_id=book_id,
-        version=version,
+        book_id=book_identifier,
+        version=version_identifier,
         file_hash=file_hash,
         metadata=meta_payload,
     )
-    write_records(records, _jsonl_path(book_id))
+    write_records(records, _jsonl_path(book_identifier))
 
     embedder = get_embedder()
     vector_size = getattr(embedder, "dim", len(embedder.embed(["test"])[0]))
 
     chunks = sliding_window_chunks(
         texts_pages,
-        book_id=book_id,
+        book_id=book_identifier,
         size=settings.chunk_size,
         overlap=settings.chunk_overlap,
     )
@@ -194,7 +203,7 @@ def index_path(
     indexed_chunks = len(chunks)
     for ch in chunks:
         # Use deterministic UUIDv5 for Qdrant-compatible point IDs
-        name = f"{book_id}||{ch.text}"
+        name = f"{book_identifier}||{ch.text}"
         uid = str(uuid.uuid5(uuid.NAMESPACE_URL, name))
         ids.append(uid)
         payloads.append(
@@ -206,7 +215,7 @@ def index_path(
                 "page_end": ch.page_end,
                 "chunk_id": ch.chunk_id,
                 "file_hash": file_hash,
-                "version": version,
+                "version": version_identifier,
                 "indexed_chunks": indexed_chunks,
                 "meta": dict(meta_payload),
             }
@@ -220,6 +229,16 @@ def index_path(
         vector_size=vector_size,
     ) as store:
         store.ensure_collection()
+        if replace_existing:
+            try:
+                store.delete_by_book_id(book_identifier)
+            except Exception:  # pragma: no cover - defensive
+                log.warning(
+                    "vector.delete_failed",
+                    book_id=book_identifier,
+                    collection=store_collection,
+                    exc_info=True,
+                )
         existing = set(store.retrieve_existing(ids))
         new_mask = [pid not in existing for pid in ids]
         new_count = sum(1 for m in new_mask if m)
@@ -230,22 +249,22 @@ def index_path(
         store.upsert(ids=ids, vectors=vecs, payloads=payloads)
 
     manifest_entry = {
-        "book_id": book_id,
+        "book_id": book_identifier,
         "path": str(in_path),
         "file_hash": file_hash,
         "indexed_chunks": len(ids),
-        "version": version,
+        "version": version_identifier,
     }
     if meta_payload:
         manifest_entry["meta"] = meta_payload
-    manifest_entry["jsonl_path"] = str(_jsonl_path(book_id))
+    manifest_entry["jsonl_path"] = str(_jsonl_path(book_identifier))
     manifest[manifest_key] = manifest_entry
     _save_manifest(manifest)
 
     log.info(
         "indexed",
-        book_id=book_id,
-        version=version,
+        book_id=book_identifier,
+        version=version_identifier,
         new=new_count,
         skipped=skipped_count,
         total=len(ids),
@@ -254,10 +273,54 @@ def index_path(
         new=new_count,
         skipped=skipped_count,
         collection=store_collection,
-        book_id=book_id,
-        version=version,
+        book_id=book_identifier,
+        version=version_identifier,
         file_hash=file_hash,
         indexed_chunks=len(ids),
+    )
+
+
+def reindex_existing_file(
+    collection: str,
+    file_hash: str,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+) -> IndexResult:
+    """Re-index a previously stored file by its hash."""
+
+    manifest = _load_manifest()
+    manifest_key = _manifest_key(collection, file_hash)
+    entry = manifest.get(manifest_key)
+    if not entry:
+        raise SystemExit("Indexed file not found")
+
+    path_value = entry.get("path")
+    if not isinstance(path_value, str) or not path_value:
+        raise SystemExit("Stored file path not available for reindexing")
+
+    stored_path = Path(path_value)
+    if not stored_path.exists():
+        raise SystemExit(f"Stored file not found: {stored_path}")
+
+    book_identifier = str(entry.get("book_id") or uuid.uuid4())
+    existing_meta = entry.get("meta")
+    merged_meta: dict[str, Any] = {}
+    if isinstance(existing_meta, Mapping):
+        merged_meta.update({str(k): v for k, v in existing_meta.items()})
+    if metadata:
+        merged_meta.update({str(k): v for k, v in metadata.items()})
+
+    meta_arg: Mapping[str, Any] | None = merged_meta if merged_meta else None
+
+    return index_path(
+        stored_path,
+        collection=collection,
+        file_hash=file_hash,
+        metadata=meta_arg,
+        book_id=book_identifier,
+        version=_new_version(),
+        force=True,
+        replace_existing=True,
     )
 
 
@@ -267,11 +330,16 @@ def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
     manifest = _load_manifest()
     cached = manifest.get(_manifest_key(collection, file_hash))
     if cached:
+        path_value = cached.get("path")
+        meta_value = cached.get("meta")
+        metadata = dict(meta_value) if isinstance(meta_value, Mapping) else None
         return IndexedFile(
             book_id=str(cached.get("book_id")),
             version=str(cached.get("version")),
             file_hash=file_hash,
             indexed_chunks=int(cached.get("indexed_chunks", 0)) or int(cached.get("chunks", 0)),
+            path=Path(path_value) if isinstance(path_value, str) else None,
+            metadata=metadata,
         )
 
     with VectorStore(
@@ -311,6 +379,8 @@ def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
         version=version,
         file_hash=file_hash,
         indexed_chunks=indexed_chunks,
+        path=None,
+        metadata=None,
     )
 
 
