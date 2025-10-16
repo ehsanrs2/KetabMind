@@ -56,6 +56,6 @@ if _real_module is not None and getattr(_real_module, "__file__", None) != __fil
 else:  # pragma: no cover - fallback stub
     if _CURRENT_MODULE is not None:
         sys.modules[__name__] = _CURRENT_MODULE
-    from ._stub import *  # noqa: F403
+    from ._stub import *  # noqa: F401, F403
 
     __all__ = [name for name in globals() if not name.startswith("_")]

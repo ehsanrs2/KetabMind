@@ -1,1 +1,1 @@
-
+"""Helper scripts package."""

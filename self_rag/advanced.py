@@ -247,7 +247,11 @@ def second_pass(question: str, settings: Settings) -> AnswerResult:
     original_retrieve = retriever.retrieve
     original_func = getattr(original_retrieve, "__func__", None)
 
-    def _patched_retrieve(self: Any, query: str, top_n: int | None = None):  # type: ignore[override]
+    def _patched_retrieve(  # type: ignore[override]
+        self: Any,
+        query: str,
+        top_n: int | None = None,
+    ):
         return original_retrieve(reformulated, top_n)
 
     try:

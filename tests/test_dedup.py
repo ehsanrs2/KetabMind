@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from typing import cast
 
@@ -25,7 +26,7 @@ def index_pdf(path: Path, store: VectorStore) -> tuple[int, int]:
                 "page_start": 0,
                 "page_end": 0,
                 "chunk_id": str(i),
-                "content_hash": __import__("hashlib").sha256(c.encode("utf-8")).hexdigest(),
+                "content_hash": hashlib.sha256(c.encode("utf-8")).hexdigest(),
             },
         )
         for i, c in enumerate(chunks)
@@ -35,7 +36,11 @@ def index_pdf(path: Path, store: VectorStore) -> tuple[int, int]:
 
 def test_dedup(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qdrant.settings, "qdrant_mode", "local")  # type: ignore[attr-defined]
-    monkeypatch.setattr(qdrant.settings, "qdrant_location", ":memory:")  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        qdrant.settings,
+        "qdrant_location",
+        ":memory:",
+    )  # type: ignore[attr-defined]
     store = VectorStore()
     store.client.recreate_collection(
         collection_name=store.collection,

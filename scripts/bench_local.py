@@ -223,7 +223,9 @@ def measure_generation_performance(
     warmup: int,
 ) -> dict[str, Any]:
     device = None
-    if torch is not None and hasattr(torch, "cuda") and torch.cuda.is_available():  # type: ignore[no-any-return]
+    if (
+        torch is not None and hasattr(torch, "cuda") and torch.cuda.is_available()  # type: ignore[no-any-return]
+    ):
         device = "cuda"
 
     def _generate() -> str:
@@ -231,7 +233,12 @@ def measure_generation_performance(
         return _consume_output(output)
 
     _reset_gpu_stats(device)
-    latencies = _time_operation(lambda: _generate(), repeats=repeats, warmup=warmup, device=device)
+    latencies = _time_operation(
+        lambda: _generate(),
+        repeats=repeats,
+        warmup=warmup,
+        device=device,
+    )
     avg_latency = statistics.mean(latencies) if latencies else 0.0
     return {
         "latencies_ms": latencies,

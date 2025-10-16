@@ -9,7 +9,11 @@ import core.vector.qdrant as qdrant
 def test_upsert_creates_collection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qdrant.settings, "qdrant_mode", "local")  # type: ignore[attr-defined]
     monkeypatch.setattr(qdrant.settings, "qdrant_url", None)  # type: ignore[attr-defined]
-    monkeypatch.setattr(qdrant.settings, "qdrant_location", ":memory:")  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        qdrant.settings,
+        "qdrant_location",
+        ":memory:",
+    )  # type: ignore[attr-defined]
     store = qdrant.VectorStore()
     with suppress(Exception):
         store.client.delete_collection(collection_name=store.collection)
