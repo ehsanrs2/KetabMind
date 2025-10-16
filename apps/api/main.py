@@ -522,9 +522,12 @@ def _ensure_upload_root() -> Path:
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Upload directory not configured",
         )
-    root = Path(upload_dir)
+    root = Path(upload_dir).expanduser()
     root.mkdir(parents=True, exist_ok=True)
-    return root
+    try:
+        return root.resolve()
+    except FileNotFoundError:  # pragma: no cover - defensive fallback
+        return root
 
 
 async def _write_upload_to_tempfile(file: UploadFile, filename: Path) -> Path:
