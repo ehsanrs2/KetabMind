@@ -23,12 +23,12 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
 
         class _DummyTokenizer:
             @classmethod
-            def from_pretrained(cls, *args: object, **kwargs: object) -> "_DummyTokenizer":
+            def from_pretrained(cls, *args: object, **kwargs: object) -> _DummyTokenizer:
                 return cls()
 
         class _DummyModel:
             @classmethod
-            def from_pretrained(cls, *args: object, **kwargs: object) -> "_DummyModel":
+            def from_pretrained(cls, *args: object, **kwargs: object) -> _DummyModel:
                 return cls()
 
         def _pipeline(*args: object, **kwargs: object):
@@ -54,10 +54,9 @@ def test_offline_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.setenv("KETABMIND_BOOK_DIR", str(home_dir / ".ketabmind" / "books"))
 
-    from fastapi.testclient import TestClient  # type: ignore import-not-found
-
     import backend.local_llm as local_llm
     import backend.main as api_main
+    from fastapi.testclient import TestClient  # type: ignore import-not-found
 
     log_path = Path.home() / ".ketabmind" / "logs" / "app.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)

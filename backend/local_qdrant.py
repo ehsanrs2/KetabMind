@@ -7,13 +7,12 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from qdrant_client import QdrantClient
-from qdrant_client.http import models as rest
-
 from core.chunk.chunker import Chunk, sliding_window_chunks
 from core.config import get_settings
 from core.embed import get_embedder
 from core.ingest.pdf import extract_pages
+from qdrant_client import QdrantClient
+from qdrant_client.http import models as rest
 
 logger = structlog.get_logger(__name__)
 
@@ -63,9 +62,7 @@ def ensure_collection(collection: str, vector_size: int) -> None:
     client = get_client()
     current = _current_vector_size(collection)
     if current is None:
-        logger.debug(
-            "local_qdrant.create_collection", collection=collection, dim=vector_size
-        )
+        logger.debug("local_qdrant.create_collection", collection=collection, dim=vector_size)
         client.recreate_collection(
             collection_name=collection,
             vectors_config=rest.VectorParams(size=vector_size, distance=rest.Distance.COSINE),
@@ -158,9 +155,7 @@ def search(
 
 def _extract_chunks(path: Path, *, book_id: str, size: int, overlap: int) -> list[Chunk]:
     pages = [
-        (page["text"], page["page_num"])
-        for page in extract_pages(path)
-        if page["text"].strip()
+        (page["text"], page["page_num"]) for page in extract_pages(path) if page["text"].strip()
     ]
     if not pages:
         return []
@@ -196,7 +191,7 @@ def index_path(
     ensure_collection(collection or settings.qdrant_collection, vector_size)
     payloads: list[dict[str, Any]] = []
     ids: list[str] = []
-    for chunk, vector in zip(chunks, vectors, strict=True):
+    for chunk, _vector in zip(chunks, vectors, strict=True):
         ids.append(chunk.chunk_id)
         payloads.append(
             {
@@ -208,4 +203,3 @@ def index_path(
         )
     upsert(ids, vectors, payloads, collection=collection)
     return ids
-

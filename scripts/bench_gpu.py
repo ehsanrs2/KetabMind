@@ -64,7 +64,12 @@ def _prepare_adapter(model_name: str, batch_size: int, device: str | None) -> Em
     return EmbeddingAdapter(model_name=model_name, batch_size=batch_size, device=device)
 
 
-def _run_benchmark(adapter: EmbeddingAdapter, texts: list[str], repeats: int, warmup: int) -> BenchmarkResult:
+def _run_benchmark(
+    adapter: EmbeddingAdapter,
+    texts: list[str],
+    repeats: int,
+    warmup: int,
+) -> BenchmarkResult:
     if torch.cuda.is_available() and "cuda" in adapter.device:
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
@@ -86,7 +91,11 @@ def _run_benchmark(adapter: EmbeddingAdapter, texts: list[str], repeats: int, wa
     if torch.cuda.is_available() and "cuda" in adapter.device:
         gpu_memory = torch.cuda.max_memory_allocated()
 
-    return BenchmarkResult(batch_size=len(texts), latencies_ms=latencies, gpu_memory_bytes=gpu_memory)
+    return BenchmarkResult(
+        batch_size=len(texts),
+        latencies_ms=latencies,
+        gpu_memory_bytes=gpu_memory,
+    )
 
 
 def main() -> None:
@@ -111,7 +120,10 @@ def main() -> None:
 
     optimizer = GPUOptimizer(device=base_adapter.device)
     available_memory = optimizer.get_available_memory()
-    logging.info("Detected available GPU memory: %.2f MiB", available_memory / (1024**2) if available_memory else 0.0)
+    logging.info(
+        "Detected available GPU memory: %.2f MiB",
+        available_memory / (1024**2) if available_memory else 0.0,
+    )
 
     optimized_batch = args.batch_size
     if baseline.gpu_memory_bytes and baseline.gpu_memory_bytes > 0:
@@ -139,7 +151,11 @@ def main() -> None:
             result.max_latency,
         )
         if result.gpu_memory_bytes:
-            logging.info("%s -> peak GPU memory: %.2f MiB", label, result.gpu_memory_bytes / (1024**2))
+            logging.info(
+                "%s -> peak GPU memory: %.2f MiB",
+                label,
+                result.gpu_memory_bytes / (1024**2),
+            )
         else:
             logging.info("%s -> GPU memory stats unavailable", label)
 

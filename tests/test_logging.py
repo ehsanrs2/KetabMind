@@ -6,8 +6,8 @@ import logging
 import pytest
 
 import structlog
-from fastapi import FastAPI, Request
 from apps.api.middleware import RequestIDMiddleware
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from utils.logging import configure_logging
 

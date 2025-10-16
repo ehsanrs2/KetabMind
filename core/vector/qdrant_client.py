@@ -62,11 +62,21 @@ if not hasattr(QdrantClient, "count"):
                 if isinstance(manifest_data, Mapping):
                     prefix = f"{collection_name}:"
                     for key, entry in manifest_data.items():
-                        if isinstance(key, str) and key.startswith(prefix) and isinstance(entry, Mapping):
+                        if (
+                            isinstance(key, str)
+                            and key.startswith(prefix)
+                            and isinstance(entry, Mapping)
+                        ):
                             try:
                                 value = entry.get("indexed_chunks") or entry.get("chunks") or 0
                                 manifest_total += int(value)
-                            except Exception:
+                            except Exception as exc:
+                                log.debug(
+                                    "qdrant.manifest_entry_parse_failed",
+                                    key=key,
+                                    error=str(exc),
+                                    exc_info=True,
+                                )
                                 continue
                     if manifest_total:
                         return SimpleNamespace(count=manifest_total)

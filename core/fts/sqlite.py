@@ -1,10 +1,11 @@
 """SQLite FTS5 backend for per-book full-text search."""
+
 from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from . import FTSBackendProto, FTSMatch
 
@@ -37,9 +38,7 @@ class SqliteFTSBackend(FTSBackendProto):
             self.available = False
 
     def index_book(self, book_id: str, pages: Iterable[tuple[int, str]]) -> None:
-        cleaned_pages = [
-            (str(book_id), int(page_num), text or "") for page_num, text in pages
-        ]
+        cleaned_pages = [(str(book_id), int(page_num), text or "") for page_num, text in pages]
         if not cleaned_pages:
             return
         with self._lock, self._conn:
@@ -62,8 +61,7 @@ class SqliteFTSBackend(FTSBackendProto):
         limit_value = max(1, int(limit or 20))
         params: list[object] = [cleaned]
         sql = (
-            "SELECT book_id, page_num, text, bm25(pages) AS score "
-            "FROM pages WHERE pages MATCH ?"
+            "SELECT book_id, page_num, text, bm25(pages) AS score " "FROM pages WHERE pages MATCH ?"
         )
         if book_id:
             sql += " AND book_id = ?"

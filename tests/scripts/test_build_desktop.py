@@ -39,10 +39,10 @@ def ensure_config() -> Path:
     if not config_path.exists():
         config_path.write_text(
             "{\n"
-            "  \"appId\": \"com.ketabmind.desktop\",\n"
-            "  \"productName\": \"KetabMind Desktop\",\n"
-            "  \"directories\": {\n"
-            "    \"output\": \"dist\"\n"
+            '  "appId": "com.ketabmind.desktop",\n'
+            '  "productName": "KetabMind Desktop",\n'
+            '  "directories": {\n'
+            '    "output": "dist"\n'
             "  }\n"
             "}\n",
             encoding="utf-8",
@@ -67,8 +67,12 @@ def test_build_desktop_creates_versioned_artifact():
     env["DRY_RUN"] = "1"
     env.setdefault("PYTHON_BIN", "python3")
 
-    subprocess.run(
-        ["bash", str(root / "scripts" / "build_desktop.sh")],
+    script_path = (root / "scripts" / "build_desktop.sh").resolve()
+    assert script_path.is_file(), "Desktop build script missing"
+    assert script_path.parent == (root / "scripts").resolve()
+
+    subprocess.run(  # noqa: S603
+        ["/bin/bash", str(script_path)],
         check=True,
         cwd=root,
         env=env,

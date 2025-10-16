@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, func, select
@@ -52,7 +52,7 @@ def test_session_search_soft_delete_and_cleanup(db_session: Session, owner: mode
     session_old = repo.create(title="Old Memories")
     db_session.commit()
 
-    old_timestamp = datetime.now(timezone.utc) - timedelta(days=45)
+    old_timestamp = datetime.now(UTC) - timedelta(days=45)
     session_old.created_at = old_timestamp
     session_old.updated_at = old_timestamp
     db_session.add(session_old)
@@ -75,7 +75,7 @@ def test_session_search_soft_delete_and_cleanup(db_session: Session, owner: mode
     assert beta_record is not None and beta_record.deleted_at is not None
     assert repo.list(query="beta") == []
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    cutoff = datetime.now(UTC) - timedelta(days=30)
     removed = repositories.delete_sessions_older_than(db_session, older_than=cutoff)
     db_session.commit()
 

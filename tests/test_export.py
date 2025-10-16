@@ -7,8 +7,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
+from fastapi.testclient import TestClient
 from tests.helpers import setup_api_stubs
 
 
@@ -22,10 +22,10 @@ def export_test_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
 
     setup_api_stubs(monkeypatch)
 
-    import core.config as config
+    import apps.api.db.repositories as repositories
     import apps.api.db.session as db_session
     import apps.api.main as api_main
-    import apps.api.db.repositories as repositories
+    import core.config as config
     from apps.api.db.base import Base
 
     importlib.reload(config)

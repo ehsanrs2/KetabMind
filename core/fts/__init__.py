@@ -1,9 +1,10 @@
 """Full-text search backend management."""
+
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from core.config import settings
 
@@ -26,7 +27,11 @@ class FTSBackendProto:
     def is_available(self) -> bool:
         return bool(self.available)
 
-    def index_book(self, book_id: str, pages: Iterable[tuple[int, str]]) -> None:  # pragma: no cover - interface
+    def index_book(
+        self,
+        book_id: str,
+        pages: Iterable[tuple[int, str]],
+    ) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
     def search(

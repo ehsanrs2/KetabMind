@@ -8,7 +8,7 @@ import logging
 import os
 import statistics
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,7 +20,6 @@ except ImportError:  # pragma: no cover - allow running without torch installed
 
 from core.answer.llm import LLM, get_llm
 from embedding.adapter import EmbeddingAdapter
-
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +55,23 @@ def _parse_args() -> BenchmarkArgs:
         ),
         help="Prompt sent to the configured language model",
     )
-    parser.add_argument("--repeats", type=int, default=3, help="Number of timed iterations per benchmark")
-    parser.add_argument("--warmup", type=int, default=1, help="Warmup iterations before timing")
-    parser.add_argument("--device", default=None, help="Preferred device for embeddings (e.g. cuda:0)")
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=3,
+        help="Number of timed iterations per benchmark",
+    )
+    parser.add_argument(
+        "--warmup",
+        type=int,
+        default=1,
+        help="Warmup iterations before timing",
+    )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Preferred device for embeddings (e.g. cuda:0)",
+    )
     parser.add_argument(
         "--output",
         default=str(Path.home() / ".ketabmind" / "benchmarks.json"),
@@ -294,7 +307,11 @@ def main() -> None:  # pragma: no cover - CLI entry point
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
     args = _parse_args()
     record = run_benchmark(args)
-    logger.info("Benchmark recorded: batch=%d, embed throughput=%.2f/s", record["batch_size"], record["embedding"].get("throughput_per_second", 0.0))
+    logger.info(
+        "Benchmark recorded: batch=%d, embed throughput=%.2f/s",
+        record["batch_size"],
+        record["embedding"].get("throughput_per_second", 0.0),
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

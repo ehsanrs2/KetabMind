@@ -13,27 +13,31 @@ import mimetypes
 import shutil
 import tempfile
 import time
-from datetime import datetime, timedelta, timezone
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar, cast
 
 from limits import RateLimitItemPerSecond
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
+    REGISTRY,
     Counter,
     Gauge,
     Histogram,
-    REGISTRY,
     generate_latest,
 )
 from slowapi import Limiter
+from sqlalchemy import func, select
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
 import structlog
 from apps.api.auth import authenticate_user, create_access_token, get_current_user, get_user_profile
 from apps.api.db import models, repositories
 from apps.api.db.session import session_scope
+from apps.api.middleware import RequestIDMiddleware
 from apps.api.routes.query import build_query_response
 from apps.api.schemas import (
     BookmarkCreate,
@@ -47,17 +51,13 @@ from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
 from core.fts import get_backend as get_fts_backend
+from exporting import export_answer
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from exporting import export_answer
-from sqlalchemy import func, select
 from utils.hash import sha256_file
 from utils.logging import configure_logging
 from utils.pydantic_compat import BaseModel
-from apps.api.middleware import RequestIDMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 
 if TYPE_CHECKING:
     from core.index import IndexResult as IndexResultType
@@ -130,11 +130,9 @@ def _cleanup_expired_sessions_once() -> int:
     retention_days = settings.history_retention_days
     if retention_days <= 0:
         return 0
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     with session_scope() as db_session:
-        removed = repositories.delete_sessions_older_than(
-            db_session, older_than=cutoff
-        )
+        removed = repositories.delete_sessions_older_than(db_session, older_than=cutoff)
         if removed:
             log.info(
                 "sessions.cleanup",
@@ -154,6 +152,7 @@ async def _session_cleanup_worker() -> None:
         except Exception:  # pragma: no cover - defensive logging
             log.warning("sessions.cleanup_failed", exc_info=True)
         await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+
 
 rate_limit_qps = settings.rate_limit_qps
 limiter_enabled = bool(rate_limit_qps and rate_limit_qps > 0)
@@ -209,6 +208,7 @@ async def _on_shutdown() -> None:
     task.cancel()
     with suppress(asyncio.CancelledError):
         await task
+
 
 if "REQUEST_COUNTER" not in globals():
     existing_counter = REGISTRY._names_to_collectors.get("api_requests_total")
@@ -402,9 +402,7 @@ def _serialize_bookmark(bookmark: models.Bookmark) -> dict[str, Any]:
 def _ensure_owner(db_session, user_profile: Mapping[str, Any]) -> models.User:
     email = user_profile.get("email")
     if not isinstance(email, str) or not email:
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile"
-        )
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
     normalized_email = email.strip().lower()
     repo = repositories.UserRepository(db_session)
     user = repo.get_by_email(normalized_email)
@@ -654,7 +652,10 @@ def login(req: LoginRequest) -> JSONResponse:
 
 
 @_get("/me")
-def me(request: Request, current_user: Annotated[dict[str, Any], Depends(get_current_user)]) -> JSONResponse:
+def me(
+    request: Request,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> JSONResponse:
     headers = _csrf_headers(request)
     return JSONResponse(current_user, headers=headers)
 
@@ -1153,9 +1154,7 @@ def export_message(
         media_type = "application/pdf"
         filename = "answer.pdf"
     else:
-        media_type = (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         filename = "answer.docx"
 
     headers = {"Content-Disposition": f"attachment; filename={filename}"}

@@ -1,16 +1,19 @@
 """FastAPI application exposing simple upload, index, and query endpoints."""
+
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, Field
 
 try:
     from . import local_llm  # type: ignore
 except Exception:  # pragma: no cover - fallback when optional dependency missing
+
     class _DefaultLocalLLM:
         """Fallback implementation used when a custom local LLM is unavailable."""
 
@@ -30,7 +33,8 @@ def _resolve_books_dir() -> Path:
 
 
 BOOKS_DIR: Path = _resolve_books_dir()
-INDEXED_FILES: Set[str] = set()
+INDEXED_FILES: set[str] = set()
+UPLOAD_FILE_PARAM = File(...)
 
 
 class UploadResponse(BaseModel):
@@ -40,7 +44,7 @@ class UploadResponse(BaseModel):
 
 class IndexRequest(BaseModel):
     filename: str = Field(..., description="Filename previously uploaded via /upload")
-    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional metadata payload")
+    metadata: dict[str, Any] | None = Field(default=None, description="Optional metadata payload")
 
 
 class IndexResponse(BaseModel):
@@ -60,19 +64,19 @@ app = FastAPI(title="KetabMind Local API")
 
 
 @app.get("/health")
-def health() -> Dict[str, str]:
+def health() -> dict[str, str]:
     """Simple health-check endpoint."""
     return {"status": "ok"}
 
 
 @app.get("/version")
-def version() -> Dict[str, str]:
+def version() -> dict[str, str]:
     """Return the backend version string."""
     return {"version": "0.1.0"}
 
 
 @app.post("/upload")
-async def upload(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def upload(file: UploadFile = UPLOAD_FILE_PARAM) -> dict[str, Any]:
     """Persist the uploaded file under the configured books directory."""
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing filename")
@@ -88,7 +92,7 @@ async def upload(file: UploadFile = File(...)) -> Dict[str, Any]:
 
 
 @app.post("/index")
-def index(request: IndexRequest) -> Dict[str, Any]:
+def index(request: IndexRequest) -> dict[str, Any]:
     """Mark the provided filename as indexed if it exists on disk."""
     target_path = BOOKS_DIR / Path(request.filename).name
     if not target_path.exists():
@@ -100,11 +104,14 @@ def index(request: IndexRequest) -> Dict[str, Any]:
 
 
 @app.post("/query")
-def query(request: QueryRequest) -> Dict[str, Any]:
+def query(request: QueryRequest) -> dict[str, Any]:
     """Proxy the prompt to the local LLM implementation and return its response."""
     generate = getattr(local_llm, "generate", None)
     if not callable(generate):  # pragma: no cover - defensive branch
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="LLM backend unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LLM backend unavailable",
+        )
 
     response_text = generate(request.prompt)
     response = QueryResponse(response=response_text)
