@@ -51,10 +51,8 @@ export function ThemeProvider({
     }
     const stored = window.localStorage.getItem(STORAGE_KEY);
     const resolved = normaliseTheme(stored) ?? defaultTheme;
-    if (resolved !== theme) {
-      setTheme(resolved);
-    }
-  }, [defaultTheme, initialTheme, theme]);
+    setTheme(resolved);
+  }, [defaultTheme, initialTheme]);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
