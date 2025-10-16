@@ -34,11 +34,17 @@ const INITIAL_FORM = {
 };
 
 function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
-  if (xhr.responseType === 'json' && xhr.response) {
-    return xhr.response as UploadResponse;
+  const { response } = xhr;
+
+  if (response == null) {
+    return null;
   }
 
-  const text = xhr.responseText;
+  if (typeof response === 'object') {
+    return response as UploadResponse;
+  }
+
+  const text = String(response);
   if (!text) {
     return null;
   }
@@ -47,7 +53,8 @@ function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
     return JSON.parse(text) as UploadResponse;
   } catch (error) {
     console.warn('Failed to parse upload response', error);
-    return null;
+    const fallback = text.trim();
+    return fallback ? { message: fallback } : null;
   }
 }
 
@@ -127,7 +134,7 @@ export default function UploadPage() {
       const payload = await new Promise<UploadResponse>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload');
-        xhr.responseType = 'json';
+        xhr.responseType = 'text';
         xhr.withCredentials = true;
 
         if (csrfToken) {
