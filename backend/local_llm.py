@@ -9,11 +9,12 @@ usage manageable on small GPUs.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
 
 import requests
@@ -207,4 +208,21 @@ def generate(prompt: str, model: str | None = None) -> str:
     raise RuntimeError("Local LLM generation failed: no backend produced output")
 
 
-__all__ = ["generate"]
+async def generate_stream(prompt: str, model: str | None = None) -> AsyncIterator[str]:
+    """Asynchronously yield portions of the generated response."""
+
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("Prompt must be a non-empty string")
+
+    response = generate(prompt, model=model)
+    words = response.split()
+    if not words:
+        return
+
+    for index, word in enumerate(words):
+        suffix = "" if index == len(words) - 1 else " "
+        await asyncio.sleep(0.05)
+        yield f"{word}{suffix}"
+
+
+__all__ = ["generate", "generate_stream"]
