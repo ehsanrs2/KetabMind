@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -65,7 +65,7 @@ class QueryResponse(BaseModel):
 class Session(BaseModel):
     """Payload representing a single chat session."""
 
-    id: str = Field(..., description="Unique identifier for the session")
+    id: UUID = Field(..., description="Unique identifier for the session")
     title: str = Field(..., description="Human-friendly session title")
     created_at: datetime = Field(..., description="UTC timestamp marking session creation")
 
@@ -146,13 +146,13 @@ def list_sessions() -> list[Session]:
 def create_session(payload: SessionCreate) -> Session:
     """Create and persist an in-memory chat session."""
 
-    session = Session(id=str(uuid4()), title=payload.title, created_at=datetime.utcnow())
+    session = Session(id=uuid4(), title=payload.title, created_at=datetime.utcnow())
     SESSIONS.append(session)
     return session
 
 
 @app.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_session(session_id: str) -> None:
+def delete_session(session_id: UUID) -> None:
     """Remove the chat session matching the provided identifier."""
 
     for index, session in enumerate(SESSIONS):
