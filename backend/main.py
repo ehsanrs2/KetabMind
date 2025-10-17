@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -76,8 +76,39 @@ class SessionCreate(BaseModel):
     title: str = Field(..., description="Title assigned to the new session")
 
 
+class Message(BaseModel):
+    """Representation of a single message exchanged within a chat session."""
+
+    id: str = Field(..., description="Unique identifier for the message")
+    session_id: str = Field(..., description="Identifier of the session owning the message")
+    role: Literal["user", "assistant"] = Field(
+        ..., description="Source of the message within the conversation"
+    )
+    content: str = Field(..., description="Message payload")
+    created_at: datetime = Field(..., description="UTC timestamp when the message was created")
+
+
+class MessageCreate(BaseModel):
+    """Payload required to create a new chat message."""
+
+    role: Literal["user", "assistant"] = Field(
+        ..., description="Source of the message within the conversation"
+    )
+    content: str = Field(..., description="Message payload")
+
+
 app = FastAPI(title="KetabMind Local API")
 SESSIONS: list[Session] = []
+messages_store: dict[str, list[Message]] = {}
+
+
+def _get_session(session_id: UUID) -> Session | None:
+    """Return the session matching the provided identifier if it exists."""
+
+    for session in SESSIONS:
+        if session.id == session_id:
+            return session
+    return None
 
 
 @app.get("/health")
@@ -155,20 +186,57 @@ def create_session(payload: SessionCreate) -> Session:
 def delete_session(session_id: UUID) -> None:
     """Remove the chat session matching the provided identifier."""
 
-    for index, session in enumerate(SESSIONS):
-        if session.id == session_id:
-            del SESSIONS[index]
-            break
-    else:  # pragma: no cover - simple branch
+    session = _get_session(session_id)
+    if session is None:  # pragma: no cover - simple branch
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    SESSIONS.remove(session)
+    messages_store.pop(str(session.id), None)
+
+
+@app.get("/sessions/{session_id}/messages", response_model=list[Message])
+def list_session_messages(session_id: UUID) -> list[Message]:
+    """Return the ordered list of messages associated with a session."""
+
+    session = _get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    return messages_store.get(str(session.id), [])
+
+
+@app.post(
+    "/sessions/{session_id}/messages",
+    response_model=Message,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_session_message(session_id: UUID, payload: MessageCreate) -> Message:
+    """Create and persist a new message within the specified session."""
+
+    session = _get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    message = Message(
+        id=str(uuid4()),
+        session_id=str(session.id),
+        role=payload.role,
+        content=payload.content,
+        created_at=datetime.utcnow(),
+    )
+    messages = messages_store.setdefault(str(session.id), [])
+    messages.append(message)
+    return message
 
 
 __all__ = [
     "app",
+    "create_session_message",
     "create_session",
     "delete_session",
     "health",
     "index",
+    "list_session_messages",
     "list_sessions",
     "query",
     "upload",
