@@ -81,6 +81,9 @@ describe('ChatPage', () => {
     });
   }
 
+  const MOCK_SESSION_ID = '11111111-1111-4111-8111-111111111111';
+  const NEW_SESSION_ID = '22222222-2222-4222-8222-222222222222';
+
   it('streams assistant tokens and renders citations as links', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const stream = createStreamController();
@@ -107,11 +110,11 @@ describe('ChatPage', () => {
         return Promise.resolve(createJsonResponse({ bookmarks: [] }));
       }
 
-      if (url.startsWith('/sessions/1/messages') && method === 'GET') {
+      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'GET') {
         return Promise.resolve(createJsonResponse({ messages: [] }));
       }
 
-      if (url.startsWith('/sessions/1/messages') && method === 'POST') {
+      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'POST') {
         postBodies.push(typeof init?.body === 'string' ? init?.body : undefined);
         const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
         const role = payload?.role;
@@ -147,10 +150,10 @@ describe('ChatPage', () => {
           createJsonResponse({
             bookmark: {
               id: bookmarkIdCounter,
-              session_id: 1,
+              session_id: MOCK_SESSION_ID,
               created_at: '2024-01-01T02:00:00Z',
               tag: body.tag ?? null,
-              session: { id: 1, title: 'Mock Session' },
+              session: { id: MOCK_SESSION_ID, title: 'Mock Session' },
               message: {
                 id: body.message_id,
                 role: 'assistant',
@@ -165,20 +168,18 @@ describe('ChatPage', () => {
 
       if (url.startsWith('/sessions') && method === 'GET') {
         return Promise.resolve(
-          createJsonResponse({
-            sessions: [
-              {
-                id: '1',
-                title: 'Mock Session',
-                last_activity: '2024-01-01T00:00:00Z',
-              },
-            ],
-          }),
+          createJsonResponse([
+            {
+              id: MOCK_SESSION_ID,
+              title: 'Mock Session',
+              last_activity: '2024-01-01T00:00:00Z',
+            },
+          ]),
         );
       }
 
       if (url.startsWith('/sessions') && method === 'POST') {
-        return Promise.resolve(createJsonResponse({ id: '2', title: 'New Session' }));
+        return Promise.resolve(createJsonResponse({ id: NEW_SESSION_ID, title: 'New Session' }));
       }
 
       if (url.startsWith('/sessions/') && method === 'DELETE') {
@@ -208,7 +209,7 @@ describe('ChatPage', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/sessions/1/messages'),
+      expect.stringContaining(`/sessions/${MOCK_SESSION_ID}/messages`),
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -323,7 +324,7 @@ describe('ChatPage', () => {
           return Promise.resolve(createJsonResponse({ bookmarks: [] }));
         }
 
-        if (url.startsWith('/sessions/1/messages') && method === 'GET') {
+        if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'GET') {
           return Promise.resolve(
             createJsonResponse({
               messages: [
@@ -340,14 +341,12 @@ describe('ChatPage', () => {
 
         if (url.startsWith('/sessions') && method === 'GET') {
           return Promise.resolve(
-            createJsonResponse({
-              sessions: [
-                {
-                  id: '1',
-                  title: 'Mock Session',
-                },
-              ],
-            }),
+            createJsonResponse([
+              {
+                id: MOCK_SESSION_ID,
+                title: 'Mock Session',
+              },
+            ]),
           );
         }
 
@@ -382,7 +381,7 @@ describe('ChatPage', () => {
           return Promise.resolve(createJsonResponse({ bookmarks: [] }));
         }
 
-        if (url.startsWith('/sessions/1/messages') && method === 'GET') {
+        if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'GET') {
           return Promise.resolve(
             createJsonResponse({
               messages: [
@@ -399,14 +398,12 @@ describe('ChatPage', () => {
 
         if (url.startsWith('/sessions') && method === 'GET') {
           return Promise.resolve(
-            createJsonResponse({
-              sessions: [
-                {
-                  id: '1',
-                  title: 'Mock Session',
-                },
-              ],
-            }),
+            createJsonResponse([
+              {
+                id: MOCK_SESSION_ID,
+                title: 'Mock Session',
+              },
+            ]),
           );
         }
 
