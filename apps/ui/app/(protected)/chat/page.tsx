@@ -48,6 +48,21 @@ type SessionsResponse = {
   }>;
 };
 
+function extractSessions(payload: unknown): SessionPayload[] {
+  if (Array.isArray(payload)) {
+    return payload as SessionPayload[];
+  }
+
+  if (payload && typeof payload === 'object' && 'sessions' in payload) {
+    const sessions = (payload as SessionsResponse).sessions;
+    if (Array.isArray(sessions)) {
+      return sessions;
+    }
+  }
+
+  return [];
+}
+
 type MessagesResponse = {
   messages?: Array<{
     id?: string | number;
@@ -580,8 +595,8 @@ export default function ChatPage() {
           throw new Error('Failed to load sessions');
         }
 
-        const payload = (await response.json()) as SessionsResponse;
-        const mapped = (payload.sessions ?? [])
+        const payload = await response.json();
+        const mapped = extractSessions(payload)
           .map(normaliseSession)
           .filter((item): item is SessionSummary => item !== null);
 
