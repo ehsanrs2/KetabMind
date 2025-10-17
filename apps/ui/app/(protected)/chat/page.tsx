@@ -19,6 +19,8 @@ type SessionSummary = {
   lastActivity?: string | null;
 };
 
+type SessionPayload = NonNullable<SessionsResponse['sessions']>[number];
+
 type CitationLink = {
   label: string;
   href: string;
@@ -98,13 +100,16 @@ function createMessageId() {
   return `msg-${Math.random().toString(36).slice(2)}`;
 }
 
-function normaliseSession(item: SessionsResponse['sessions'][number]): SessionSummary | null {
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normaliseSession(item: SessionPayload | undefined): SessionSummary | null {
   if (!item) {
     return null;
   }
 
-  const id = item.id;
-  if (id === null || id === undefined) {
+  const id = typeof item.id === 'string' ? item.id.trim() : undefined;
+  if (!id || !UUID_PATTERN.test(id)) {
     return null;
   }
 
@@ -895,7 +900,7 @@ export default function ChatPage() {
       }
 
       const payload = await response.json();
-      const session = normaliseSession(payload.session ?? payload);
+      const session = normaliseSession((payload?.session ?? payload) as SessionPayload | undefined);
       if (session) {
         setSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
         setSelectedSessionId(session.id);
@@ -933,8 +938,14 @@ export default function ChatPage() {
         abortControllerRef.current?.abort();
       }
 
+      const trimmedId = sessionId.trim();
+      if (!UUID_PATTERN.test(trimmedId)) {
+        setError('Invalid session identifier.');
+        return;
+      }
+
       try {
-        const response = await fetch(`/sessions/${sessionId}`, {
+        const response = await fetch(`/sessions/${trimmedId}`, {
           method: 'DELETE',
           headers: csrfHeaders,
           credentials: 'include',
