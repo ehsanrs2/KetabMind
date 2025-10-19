@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:  # pragma: no cover - typing aid
     from pydantic import BaseModel as BaseModel
@@ -66,3 +66,12 @@ class BookmarkCreate(BaseModel):  # type: ignore[misc]
 class SessionCreate(BaseModel):  # type: ignore[misc]
     title: str | None = None
     book_id: int | str | None = None
+
+
+class StreamMessageRequest(BaseModel):  # type: ignore[misc]
+    """Request payload used when streaming assistant responses."""
+
+    content: str
+    model: Literal["ollama", "openai"]
+    temperature: float | None = None
+    context: bool | None = None
