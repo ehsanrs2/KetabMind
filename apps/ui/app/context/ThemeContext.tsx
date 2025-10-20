@@ -17,6 +17,7 @@ type ThemeContextValue = {
   toggleTheme: () => void;
 };
 
+
 const STORAGE_KEY = 'ketabmind.theme';
 
 function getEnvDefaultTheme(): Theme {
@@ -33,6 +34,19 @@ function normaliseTheme(value: unknown): Theme | null {
   return lower === 'dark' || lower === 'light' ? (lower as Theme) : null;
 }
 
+function readStoredTheme(): Theme | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return normaliseTheme(stored);
+  } catch (error) {
+    console.warn('Unable to read stored theme preference', error);
+    return null;
+  }
+}
+
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export function ThemeProvider({
@@ -43,27 +57,54 @@ export function ThemeProvider({
   initialTheme?: Theme;
 }) {
   const defaultTheme = useMemo(() => initialTheme ?? getEnvDefaultTheme(), [initialTheme]);
-  const [theme, setTheme] = useState<Theme>(defaultTheme);
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (initialTheme) {
+      return initialTheme;
+    }
+    return readStoredTheme() ?? defaultTheme;
+  });
 
   useEffect(() => {
-    if (typeof window === 'undefined' || initialTheme) {
-      return;
+    if (initialTheme) {
+      setTheme(initialTheme);
     }
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    const resolved = normaliseTheme(stored) ?? defaultTheme;
-    if (resolved !== theme) {
-      setTheme(resolved);
-    }
-  }, [defaultTheme, initialTheme, theme]);
+  }, [initialTheme]);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.body.dataset.theme = theme;
     }
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, theme);
+      try {
+        window.localStorage.setItem(STORAGE_KEY, theme);
+      } catch (error) {
+        console.warn('Unable to persist theme preference', error);
+      }
     }
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || initialTheme) {
+      return;
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY) {
+        return;
+      }
+      const nextTheme = normaliseTheme(event.newValue);
+      if (nextTheme) {
+        setTheme((current) => (current === nextTheme ? current : nextTheme));
+      }
+    };
+    const stored = readStoredTheme();
+    if (stored) {
+      setTheme((current) => (current === stored ? current : stored));
+    }
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [initialTheme]);
 
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === 'light' ? 'dark' : 'light'));

@@ -7,6 +7,8 @@ from typing import Any
 
 from .http import models as rest
 
+_GLOBAL_COLLECTIONS: dict[tuple[str | None, str | None], dict[str, dict[str, Any]]] = {}
+
 __all__ = ["QdrantClient"]
 
 
@@ -21,7 +23,8 @@ class QdrantClient:
     def __init__(self, *, path: str | None = None, url: str | None = None) -> None:
         self.path = path
         self.url = url
-        self._collections: dict[str, dict[str, Any]] = {}
+        key = (path, url)
+        self._collections = _GLOBAL_COLLECTIONS.setdefault(key, {})
 
     def recreate_collection(self, collection_name: str, vectors_config: rest.VectorParams) -> None:
         self._collections[collection_name] = {
@@ -38,7 +41,7 @@ class QdrantClient:
         config = self._collections[collection_name]["config"]
         return SimpleNamespace(config=SimpleNamespace(params=config))
 
-    def upsert(self, collection_name: str, points: Any) -> None:
+    def upsert(self, collection_name: str, points: Any, wait: bool | None = None, **_: Any) -> None:
         collection = self._collections.setdefault(
             collection_name,
             {
@@ -60,7 +63,7 @@ class QdrantClient:
         self,
         collection_name: str,
         *,
-        scroll_filter: rest.Filter,
+        scroll_filter: rest.Filter | None,
         limit: int,
         **_: Any,
     ) -> tuple[list[_Record], None]:
@@ -68,9 +71,10 @@ class QdrantClient:
         if not collection:
             return ([], None)
         matches: list[_Record] = []
+        filter_obj = scroll_filter or rest.Filter(must=[])
         for point_id, point in collection["points"].items():
             payload = point["payload"]
-            if _match_filter(payload, scroll_filter):
+            if _match_filter(payload, filter_obj):
                 matches.append(_Record(point_id, dict(payload)))
             if len(matches) >= limit:
                 break

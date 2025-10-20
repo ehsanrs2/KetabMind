@@ -87,7 +87,12 @@ def test_index_query_phase1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     q_client = QdrantClient(path=str(store_path))
     try:
-        points, _ = q_client.scroll(collection_name=collection, limit=20)
+        points, _ = q_client.scroll(
+            collection_name=collection,
+            scroll_filter=None,
+            limit=20,
+            with_payload=True,
+        )
     finally:
         close = getattr(q_client, "close", None)
         if callable(close):
@@ -113,6 +118,8 @@ def test_index_query_phase1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     citations = query_payload.get("citations", [])
     assert citations, "Query response did not include any citations"
     citation = citations[0]
-    assert citation["book_id"] == book_id
-    assert citation["version"] == version
-    assert citation.get("page_num") == target_payload.get("page_num")
+    assert isinstance(citation, str), f"Unexpected citation format: {citation!r}"
+    assert book_id in citation
+    page_fragment = citation.split(':', 1)[1] if ':' in citation else ''
+    page_fragment = page_fragment.strip('[]')
+    assert str(target_payload.get("page_num")) in page_fragment

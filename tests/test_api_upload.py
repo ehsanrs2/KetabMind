@@ -36,14 +36,16 @@ def test_upload_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     r1 = client.post("/upload", files=files())
     assert r1.status_code == 200
     data1 = r1.json()
-    assert set(data1.keys()) == {"book_id", "version", "file_hash"}
+    assert {"book_id", "version", "file_hash", "path"}.issubset(data1.keys())
     assert data1["book_id"]
     assert data1["file_hash"].startswith("sha256:")
     assert data1["version"].startswith("v")
+    assert Path(data1["path"]).exists()
 
     r2 = client.post("/upload", files=files())
     assert r2.status_code == 200
     data2 = r2.json()
-    assert set(data2.keys()) == {"book_id", "version", "file_hash"}
+    assert {"book_id", "version", "file_hash", "path"}.issubset(data2.keys())
     assert data2["book_id"] == data1["book_id"]
     assert data2["version"] == data1["version"]
+    assert data2.get("already_indexed")

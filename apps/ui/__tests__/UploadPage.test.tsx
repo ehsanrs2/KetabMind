@@ -128,6 +128,13 @@ describe('UploadPage', () => {
         book_id: 'book-123',
         version: 1,
         file_hash: 'hash-abc',
+        path: '/uploads/user/book-123/test.pdf',
+        meta: {
+          title: 'Test Book',
+          author: 'Jane Doe',
+          year: '2024',
+          subject: 'History',
+        },
         message: 'Upload completed successfully.',
       });
     });
@@ -153,12 +160,22 @@ describe('UploadPage', () => {
       await user.click(screen.getByRole('button', { name: /index now/i }));
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/index',
+    const fetchArgs = fetchMock.mock.calls[0];
+    expect(fetchArgs?.[0]).toBe('/index');
+    expect(fetchArgs?.[1]).toEqual(
       expect.objectContaining({
         method: 'POST',
+        credentials: 'include',
       }),
     );
+    const sentBody = fetchArgs?.[1]?.body ? JSON.parse(fetchArgs[1].body as string) : {};
+    expect(sentBody).toEqual({
+      path: '/uploads/user/book-123/test.pdf',
+      author: 'Jane Doe',
+      year: '2024',
+      subject: 'History',
+      title: 'Test Book',
+    });
 
     await screen.findByText(/indexing started/i);
   });
@@ -187,6 +204,13 @@ describe('UploadPage', () => {
         book_id: 'book-duplicate',
         version: 2,
         file_hash: 'hash-duplicate',
+        path: '/uploads/user/book-duplicate/existing.pdf',
+        meta: {
+          title: 'Existing Book',
+          author: 'John Doe',
+          year: '2023',
+          subject: 'Science',
+        },
         already_indexed: true,
         message: 'Already indexed',
       });

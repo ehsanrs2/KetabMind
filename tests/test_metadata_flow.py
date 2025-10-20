@@ -57,11 +57,14 @@ def test_metadata_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         location=settings.qdrant_location,
         url=settings.qdrant_url,
         collection=settings.qdrant_collection,
-        vector_size=1,
+        vector_size=None,
+        ensure_collection=False,
     ) as store:
         points, _ = store.client.scroll(
             collection_name=settings.qdrant_collection,
+            scroll_filter=None,
             limit=10,
+            with_payload=True,
         )
 
     metas = [dict(point.payload or {}).get("meta") for point in points]

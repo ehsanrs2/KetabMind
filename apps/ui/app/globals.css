@@ -161,18 +161,20 @@ main.container {
   border: none;
   cursor: pointer;
   font-weight: 600;
+  color: var(--color-text);
 }
 
 .navbar__dropdown {
   position: absolute;
   right: 0;
   top: 2.5rem;
-  background: var(--color-surface);
+  background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   padding: 0.5rem 0;
   min-width: 8rem;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
+  color: var(--color-text);
 }
 
 body.rtl .navbar__dropdown {
@@ -187,6 +189,13 @@ body.rtl .navbar__dropdown {
   background: transparent;
   text-align: left;
   cursor: pointer;
+  color: inherit;
+}
+.navbar__dropdown-item:hover,
+.navbar__dropdown-item:focus-visible {
+  background: var(--color-primary-soft);
+  color: inherit;
+  outline: none;
 }
 
 body.rtl .navbar__dropdown-item {

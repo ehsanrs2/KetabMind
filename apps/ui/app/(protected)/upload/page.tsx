@@ -4,10 +4,20 @@ import type { CSSProperties } from 'react';
 import { ChangeEvent, FormEvent, useCallback, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 
+type UploadMetadata = {
+  author?: string;
+  year?: number | string;
+  subject?: string;
+  title?: string;
+};
+
 type UploadResponse = {
   book_id?: string;
   version?: number | string;
   file_hash?: string;
+  path?: string;
+  meta?: UploadMetadata;
+  indexed_chunks?: number;
   message?: string;
   detail?: string;
   already_indexed?: boolean;
@@ -34,17 +44,18 @@ const INITIAL_FORM = {
 };
 
 function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
-  if (xhr.responseType === 'json' && xhr.response) {
-    return xhr.response as UploadResponse;
-  }
-
-  const text = xhr.responseText;
-  if (!text) {
+  const raw =
+    typeof xhr.response === 'string' && xhr.response
+      ? xhr.response
+      : typeof xhr.responseText === 'string'
+        ? xhr.responseText
+        : null;
+  if (!raw || raw.trim().length === 0) {
     return null;
   }
 
   try {
-    return JSON.parse(text) as UploadResponse;
+    return JSON.parse(raw) as UploadResponse;
   } catch (error) {
     console.warn('Failed to parse upload response', error);
     return null;
@@ -127,7 +138,7 @@ export default function UploadPage() {
       const payload = await new Promise<UploadResponse>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload');
-        xhr.responseType = 'json';
+        xhr.responseType = 'text';
         xhr.withCredentials = true;
 
         if (csrfToken) {
@@ -144,7 +155,11 @@ export default function UploadPage() {
         xhr.onload = () => {
           const responsePayload = parseXhrResponse(xhr);
           if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(responsePayload ?? {});
+            if (responsePayload) {
+              resolve(responsePayload);
+            } else {
+              reject(new Error('Upload succeeded but response payload was empty.'));
+            }
           } else {
             reject(new Error(extractMessage(responsePayload, `Upload failed with status ${xhr.status}`)));
           }
@@ -188,10 +203,29 @@ export default function UploadPage() {
       return;
     }
 
+    if (!uploadResponse.path) {
+      setIndexStatus({ type: 'error', message: 'Unable to locate uploaded file for indexing. Please upload again.' });
+      return;
+    }
+
     setIsIndexing(true);
     setIndexStatus(null);
 
     try {
+      const indexPayload: Record<string, unknown> = {
+        path: uploadResponse.path,
+      };
+      const metaSource: UploadMetadata | undefined = uploadResponse.meta
+        ? { ...uploadResponse.meta }
+        : undefined;
+      const maybeMeta: UploadMetadata = metaSource ?? ({ ...formValues } as UploadMetadata);
+      (['author', 'year', 'subject', 'title'] as const).forEach((key) => {
+        const value = maybeMeta[key];
+        if (value !== undefined && value !== null && value !== '') {
+          indexPayload[key] = value;
+        }
+      });
+
       const response = await fetch('/index', {
         method: 'POST',
         headers: {
@@ -199,11 +233,7 @@ export default function UploadPage() {
           ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
         },
         credentials: 'include',
-        body: JSON.stringify({
-          book_id: uploadResponse.book_id,
-          version: uploadResponse.version,
-          file_hash: uploadResponse.file_hash,
-        }),
+        body: JSON.stringify(indexPayload),
       });
 
       const text = await response.text();
@@ -230,7 +260,7 @@ export default function UploadPage() {
     } finally {
       setIsIndexing(false);
     }
-  }, [uploadResponse]);
+  }, [csrfToken, formValues, uploadResponse]);
 
   const clampedProgress = progress === null ? 0 : Math.min(100, Math.max(0, progress));
   const progressFillStyle = useMemo(
@@ -356,8 +386,14 @@ export default function UploadPage() {
               <dt>File hash</dt>
               <dd data-testid="upload-result-file-hash">{fileHash}</dd>
             </div>
+            {uploadResponse?.path ? (
+              <div>
+                <dt>Stored path</dt>
+                <dd data-testid="upload-result-path">{uploadResponse.path}</dd>
+              </div>
+            ) : null}
           </dl>
-          <button type="button" onClick={handleIndexNow} disabled={isIndexing}>
+          <button type="button" onClick={handleIndexNow} disabled={isIndexing || !uploadResponse?.path}>
             {isIndexing ? 'Indexing…' : 'Index now'}
           </button>
           {indexStatus && (

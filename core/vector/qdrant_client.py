@@ -54,6 +54,7 @@ class VectorStore:
         embedding_adapter: Any | None = None,
         location: str | None = None,
         url: str | None = None,
+        ensure_collection: bool = True,
     ) -> None:
         self.collection = collection
         if mode == "local":
@@ -67,12 +68,13 @@ class VectorStore:
                 msg = "embedding_adapter must expose a 'dim' attribute"
                 raise AttributeError(msg)
             self.vector_size = int(adapter_dim)
-        elif vector_size is not None:
-            self.vector_size = int(vector_size)
         else:
-            msg = "vector_size or embedding_adapter is required"
-            raise ValueError(msg)
-        self.ensure_collection()
+            self.vector_size = int(vector_size) if vector_size is not None else None
+            if self.vector_size is None and ensure_collection:
+                msg = "vector_size or embedding_adapter is required when ensure_collection is True"
+                raise ValueError(msg)
+        if ensure_collection and self.vector_size is not None:
+            self.ensure_collection()
 
     def __enter__(self) -> VectorStore:  # pragma: no cover - simple context helper
         return self
@@ -86,6 +88,8 @@ class VectorStore:
             close()
 
     def ensure_collection(self) -> None:
+        if self.vector_size is None:
+            return
         self.recreate_collection_if_needed(self.collection, self.vector_size)
 
     def recreate_collection_if_needed(self, name: str, dim: int) -> None:
@@ -147,7 +151,7 @@ class VectorStore:
             msg = "payloads length must match ids length"
             raise ValueError(msg)
         points = rest.Batch(ids=norm_ids, vectors=vector_list, payloads=payload_list)
-        self.client.upsert(collection_name=self.collection, points=points)
+        self.client.upsert(collection_name=self.collection, points=points, wait=True)
 
     def query(self, vector: VectorInput, top_k: int = 3) -> list[dict[str, Any]]:
         query_vector = self._to_list(vector)

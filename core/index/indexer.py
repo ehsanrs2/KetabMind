@@ -279,7 +279,8 @@ def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
         location=settings.qdrant_location,
         url=settings.qdrant_url,
         collection=collection,
-        vector_size=1,
+        vector_size=None,
+        ensure_collection=False,
     ) as store:
         try:
             existing, _ = store.client.scroll(
@@ -293,6 +294,7 @@ def find_indexed_file(collection: str, file_hash: str) -> IndexedFile | None:
                     ]
                 ),
                 limit=1,
+                with_payload=True,
             )
         except ValueError as exc:
             if "not found" in str(exc).lower():

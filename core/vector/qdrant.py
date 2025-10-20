@@ -111,6 +111,7 @@ class VectorStore:
                     ]
                 ),
                 limit=1,
+                with_payload=False,
             )
             if existing:
                 skipped += 1

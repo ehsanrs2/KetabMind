@@ -805,6 +805,8 @@ async def upload(
     owner_id = str(_user.get("id") or "")
     if not owner_id:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
+    meta_payload = meta.as_dict()
+    response_payload: dict[str, Any]
     try:
         collection = settings.qdrant_collection
         file_hash = sha256_file(tmp_path)
@@ -814,25 +816,41 @@ async def upload(
             version = existing.version
             stored_path = _store_uploaded_file(tmp_path, owner_id, book_id, filename.name)
             _update_indexed_path(collection, file_hash, stored_path)
+            response_payload = {
+                "book_id": book_id,
+                "version": version,
+                "file_hash": file_hash,
+                "path": str(stored_path),
+                "already_indexed": True,
+            }
         else:
             result = _index_path(
                 tmp_path,
                 collection=collection,
                 file_hash=file_hash,
-                metadata=meta.as_dict(),
+                metadata=meta_payload,
             )
             book_id = result.book_id
             version = result.version
             file_hash = result.file_hash
             stored_path = _store_uploaded_file(tmp_path, owner_id, book_id, filename.name)
             _update_indexed_path(collection, file_hash, stored_path)
+            response_payload = {
+                "book_id": book_id,
+                "version": version,
+                "file_hash": file_hash,
+                "path": str(stored_path),
+                "indexed_chunks": result.indexed_chunks,
+            }
+        if meta_payload:
+            response_payload["meta"] = meta_payload
     except SystemExit as exc:  # invalid path or type
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         with suppress(FileNotFoundError):
             tmp_path.unlink()
 
-    return {"book_id": book_id, "version": version, "file_hash": file_hash}
+    return response_payload
 
 
 @_get("/book/{book_id}/page/{page}/view")
