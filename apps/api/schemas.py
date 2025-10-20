@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:  # pragma: no cover - typing aid
     from pydantic import BaseModel as BaseModel
@@ -25,12 +25,14 @@ class Metadata(BaseModel):  # type: ignore[misc]
 
 
 class IndexRequest(BaseModel):  # type: ignore[misc]
-    path: str
+    path: str | None = None
     collection: str | None = None
     author: str | None = None
     year: int | str | None = None
     subject: str | None = None
     title: str | None = None
+    book_id: str | None = None
+    file_hash: str | None = None
 
     def metadata(self) -> dict[str, Any]:
         """Return metadata payload cleaned of empty values."""
@@ -64,3 +66,12 @@ class BookmarkCreate(BaseModel):  # type: ignore[misc]
 class SessionCreate(BaseModel):  # type: ignore[misc]
     title: str | None = None
     book_id: int | str | None = None
+
+
+class StreamMessageRequest(BaseModel):  # type: ignore[misc]
+    """Request payload used when streaming assistant responses."""
+
+    content: str
+    model: Literal["ollama", "openai"]
+    temperature: float | None = None
+    context: bool | None = None

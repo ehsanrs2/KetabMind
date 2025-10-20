@@ -129,9 +129,7 @@ def test_bookmarks_filter_by_owner(
     with pytest.raises(ValueError):
         bookmark_repo_one.create(message_id=assistant_two.id)
 
-    user_message = message_repo_one.create(
-        session_id=session_one.id, role="user", content="Hello"
-    )
+    user_message = message_repo_one.create(session_id=session_one.id, role="user", content="Hello")
     with pytest.raises(ValueError):
         bookmark_repo_one.create(message_id=user_message.id)
 

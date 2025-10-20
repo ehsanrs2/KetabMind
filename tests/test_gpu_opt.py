@@ -10,8 +10,15 @@ from utils import gpu_opt
 def _mock_cuda(monkeypatch: pytest.MonkeyPatch, free_bytes: int, total_bytes: int) -> None:
     fake_cuda = types.SimpleNamespace()
     fake_cuda.is_available = lambda: True
-    fake_cuda.mem_get_info = lambda index=0: (free_bytes, total_bytes)
-    fake_cuda.get_device_properties = lambda index=0: types.SimpleNamespace(total_memory=total_bytes)
+
+    def _mem_get_info(index: int = 0) -> tuple[int, int]:
+        return free_bytes, total_bytes
+
+    def _device_props(index: int = 0) -> types.SimpleNamespace:
+        return types.SimpleNamespace(total_memory=total_bytes)
+
+    fake_cuda.mem_get_info = _mem_get_info
+    fake_cuda.get_device_properties = _device_props
     fake_torch = types.SimpleNamespace(
         cuda=fake_cuda,
         bfloat16="bfloat16",
@@ -26,8 +33,15 @@ def test_adjust_batch_size_downsizes_when_memory_limited(monkeypatch: pytest.Mon
     total = 8 * 1024**3
     _mock_cuda(monkeypatch, free_bytes=free, total_bytes=total)
 
-    optimizer = gpu_opt.GPUOptimizer(device="cuda:0", safety_margin=1.0, reserved_memory_mb=0)
-    adjusted = optimizer.adjust_batch_size(base_batch_size=16, per_sample_memory_bytes=512 * 1024**2)
+    optimizer = gpu_opt.GPUOptimizer(
+        device="cuda:0",
+        safety_margin=1.0,
+        reserved_memory_mb=0,
+    )
+    adjusted = optimizer.adjust_batch_size(
+        base_batch_size=16,
+        per_sample_memory_bytes=512 * 1024**2,
+    )
     assert adjusted == 8
 
 
@@ -36,7 +50,12 @@ def test_trim_context_limits_tokens_based_on_memory(monkeypatch: pytest.MonkeyPa
     total = 8 * 1024**3
     _mock_cuda(monkeypatch, free_bytes=free, total_bytes=total)
 
-    optimizer = gpu_opt.GPUOptimizer(device="cuda:0", safety_margin=1.0, reserved_memory_mb=0, tokens_per_gb=1024)
+    optimizer = gpu_opt.GPUOptimizer(
+        device="cuda:0",
+        safety_margin=1.0,
+        reserved_memory_mb=0,
+        tokens_per_gb=1024,
+    )
     tokens = list(range(5000))
     trimmed = optimizer.trim_context(tokens)
     assert len(trimmed) == 2048
@@ -62,5 +81,8 @@ def test_adjust_batch_size_returns_base_on_cpu(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(gpu_opt, "torch", fake_torch, raising=False)
 
     optimizer = gpu_opt.GPUOptimizer(device="cpu")
-    adjusted = optimizer.adjust_batch_size(base_batch_size=4, per_sample_memory_bytes=256 * 1024**2)
+    adjusted = optimizer.adjust_batch_size(
+        base_batch_size=4,
+        per_sample_memory_bytes=256 * 1024**2,
+    )
     assert adjusted == 4

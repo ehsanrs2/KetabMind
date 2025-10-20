@@ -1,4 +1,5 @@
 """Integration test for the lightweight local FastAPI application."""
+
 from __future__ import annotations
 
 import importlib

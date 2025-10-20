@@ -1,1 +1,1 @@
-
+"""API application package."""

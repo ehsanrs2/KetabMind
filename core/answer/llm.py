@@ -333,7 +333,11 @@ class OllamaLLM(LLM):
         if patched_post is not None and patched_post is not _ORIGINAL_HTTPX_POST:
 
             def _patched_post(url: str, *, json: dict[str, Any]) -> httpx.Response:
-                return patched_post(url, json=json, timeout=self._timeout)  # type: ignore[arg-type]
+                return patched_post(  # type: ignore[arg-type]
+                    url,
+                    json=json,
+                    timeout=self._timeout,
+                )
 
             self._post = _patched_post
 
@@ -341,7 +345,12 @@ class OllamaLLM(LLM):
         if patched_stream is not None and patched_stream is not _ORIGINAL_HTTPX_STREAM:
 
             def _patched_stream(method: str, url: str, *, json: dict[str, Any]):
-                return patched_stream(method, url, json=json, timeout=self._timeout)  # type: ignore[arg-type]
+                return patched_stream(  # type: ignore[arg-type]
+                    method,
+                    url,
+                    json=json,
+                    timeout=self._timeout,
+                )
 
             self._stream_call = _patched_stream
 

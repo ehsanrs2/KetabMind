@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from io import BytesIO
-from typing import Any, Iterable, Sequence
 import textwrap
+from collections.abc import Iterable, Mapping, Sequence
+from io import BytesIO
+from typing import Any
 
 from docx import Document
 from reportlab.lib.pagesizes import letter
@@ -53,7 +53,7 @@ def _extract_meta(meta: Any) -> dict[str, Any]:
 
 
 def _format_metric(value: Any) -> str:
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         formatted = f"{float(value):.2f}"
         return formatted.rstrip("0").rstrip(".") if "." in formatted else formatted
     return "N/A"
@@ -66,7 +66,15 @@ def _wrap_lines(text: str, *, width: int = _WRAP_WIDTH) -> Sequence[str]:
     return wrapped or (text,)
 
 
-def _pdf_answer_section(pdf_canvas: canvas.Canvas, *, question: str, bullets: Sequence[str], citations: Sequence[str], coverage_text: str, confidence_text: str) -> None:
+def _pdf_answer_section(
+    pdf_canvas: canvas.Canvas,
+    *,
+    question: str,
+    bullets: Sequence[str],
+    citations: Sequence[str],
+    coverage_text: str,
+    confidence_text: str,
+) -> None:
     text_obj = pdf_canvas.beginText(_MARGIN, letter[1] - _MARGIN)
     text_obj.setFont("Helvetica-Bold", 14)
     for line in _wrap_lines(f"Question: {question}"):

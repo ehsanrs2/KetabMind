@@ -28,14 +28,20 @@ def test_generate_prefers_ollama(monkeypatch):
         captured["json"] = json
         captured["timeout"] = timeout
         captured["stream"] = stream
-        return DummyResponse([
-            {"response": "Hello "},
-            {"response": "world!"},
-        ])
+        return DummyResponse(
+            [
+                {"response": "Hello "},
+                {"response": "world!"},
+            ]
+        )
 
     monkeypatch.setattr(local_llm.requests, "post", fake_post)
     monkeypatch.setattr(local_llm, "_PIPELINE_CACHE", {})
-    monkeypatch.setattr(local_llm, "_get_hf_pipeline", lambda *_, **__: (_ for _ in ()).throw(AssertionError("HF not expected")))
+
+    def _unexpected_pipeline(*_: object, **__: object):
+        raise AssertionError("HF not expected")
+
+    monkeypatch.setattr(local_llm, "_get_hf_pipeline", _unexpected_pipeline)
 
     result = local_llm.generate("test prompt", model="custom-model")
 
@@ -91,7 +97,9 @@ def test_generate_falls_back_to_hf(monkeypatch):
     result = local_llm.generate("irrelevant and lengthy prompt", model="ignored")
 
     # Prompt is trimmed to 10 characters (the last 10)
-    assert captured["prompt"] == "thy prompt", "Prompt should be trimmed to the configured character budget"
+    assert (
+        captured["prompt"] == "thy prompt"
+    ), "Prompt should be trimmed to the configured character budget"
     assert captured["max_new_tokens"] == 5
     assert "[book_id:" in result
 
@@ -103,4 +111,3 @@ def test_generate_falls_back_to_hf(monkeypatch):
 def test_generate_raises_on_empty_prompt():
     with pytest.raises(ValueError):
         local_llm.generate(" ")
-

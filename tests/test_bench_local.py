@@ -66,7 +66,12 @@ def test_auto_tune_batch_size_reduces_on_oom(monkeypatch: pytest.MonkeyPatch) ->
 def test_measure_embedding_records_gpu_memory(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = _DummyAdapter(batch_size=2)
 
-    metrics = bench_local.measure_embedding_performance(adapter, sample_text="x", repeats=1, warmup=0)
+    metrics = bench_local.measure_embedding_performance(
+        adapter,
+        sample_text="x",
+        repeats=1,
+        warmup=0,
+    )
 
     assert metrics["batch_size"] == 2
     assert metrics["gpu_memory_bytes"] == 2048
@@ -76,7 +81,12 @@ def test_measure_generation_uses_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     dummy_llm = _DummyLLM()
     monkeypatch.setattr(bench_local, "get_llm", lambda: dummy_llm)
 
-    metrics = bench_local.measure_generation_performance(dummy_llm, prompt="hello", repeats=1, warmup=0)
+    metrics = bench_local.measure_generation_performance(
+        dummy_llm,
+        prompt="hello",
+        repeats=1,
+        warmup=0,
+    )
 
     assert metrics["avg_latency_ms"] >= 0.0
     assert dummy_llm.invocations >= 1

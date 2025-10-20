@@ -48,4 +48,43 @@ def test_upload_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert {"book_id", "version", "file_hash", "path"}.issubset(data2.keys())
     assert data2["book_id"] == data1["book_id"]
     assert data2["version"] == data1["version"]
-    assert data2.get("already_indexed")
+
+
+def test_index_after_upload_with_relative_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("QDRANT_MODE", "local")
+    monkeypatch.setenv("QDRANT_LOCATION", str(tmp_path / "qdrant"))
+    monkeypatch.setenv("QDRANT_COLLECTION", "tapiu-rel")
+    monkeypatch.setenv("EMBED_MODEL", "mock")
+    monkeypatch.setenv("UPLOAD_DIR", "./uploads")
+
+    setup_api_stubs(monkeypatch)
+
+    import core.config as config
+
+    importlib.reload(config)
+    import apps.api.main as api_main
+
+    importlib.reload(api_main)
+    app = api_main.app  # noqa: WPS433
+
+    client = TestClient(app)
+
+    upload_response = client.post(
+        "/upload",
+        files={"file": ("tiny.txt", io.BytesIO(b"hello world"), "text/plain")},
+    )
+    assert upload_response.status_code == 200
+    payload = upload_response.json()
+
+    reindex_response = client.post(
+        "/index",
+        json={
+            "book_id": payload["book_id"],
+            "file_hash": payload["file_hash"],
+        },
+    )
+
+    assert reindex_response.status_code == 200

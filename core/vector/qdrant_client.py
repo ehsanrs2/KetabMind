@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
 
 if TYPE_CHECKING:
@@ -28,6 +31,93 @@ else:
 import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
+
+if not hasattr(QdrantClient, "count"):
+
+    def _fallback_count(
+        self: QdrantClient,
+        collection_name: str,
+        count_filter: rest.Filter | None = None,
+        exact: bool = False,
+        limit: int = 1000,
+        **_: Any,
+    ) -> SimpleNamespace:
+        if not exact:
+            raise NotImplementedError("Approximate counts are not supported in this client version")
+        if count_filter is None:
+            manifest_total = 0
+            try:
+                from core.config import settings as _settings  # type: ignore
+
+                manifest_location = getattr(_settings, "qdrant_location", "") or ""
+            except Exception:  # pragma: no cover - defensive
+                manifest_location = ""
+            if manifest_location:
+                manifest_path = Path(manifest_location) / ".indexed_files.json"
+                try:
+                    with manifest_path.open("r", encoding="utf-8") as fh:
+                        manifest_data = json.load(fh)
+                except Exception:  # pragma: no cover - best effort fallback
+                    manifest_data = None
+                if isinstance(manifest_data, Mapping):
+                    prefix = f"{collection_name}:"
+                    for key, entry in manifest_data.items():
+                        if (
+                            isinstance(key, str)
+                            and key.startswith(prefix)
+                            and isinstance(entry, Mapping)
+                        ):
+                            try:
+                                value = entry.get("indexed_chunks") or entry.get("chunks") or 0
+                                manifest_total += int(value)
+                            except Exception as exc:
+                                log.debug(
+                                    "qdrant.manifest_entry_parse_failed",
+                                    key=key,
+                                    error=str(exc),
+                                    exc_info=True,
+                                )
+                                continue
+                    if manifest_total:
+                        return SimpleNamespace(count=manifest_total)
+            try:
+                info = self.get_collection(collection_name=collection_name)
+            except Exception:  # pragma: no cover - compatibility fallback
+                info = None
+            if info is not None:
+                points_count = getattr(info, "points_count", None)
+                if points_count is not None:
+                    return SimpleNamespace(count=int(points_count))
+        total = 0
+        offset: rest.ExtendedPointId | None = None
+        while True:
+            try:
+                kwargs: dict[str, Any] = {
+                    "collection_name": collection_name,
+                    "limit": limit,
+                    "offset": offset,
+                    "with_payload": False,
+                    "with_vectors": False,
+                }
+                if count_filter is not None:
+                    kwargs["scroll_filter"] = count_filter
+                points, offset = self.scroll(**kwargs)
+            except TypeError:
+                try:
+                    kwargs.pop("scroll_filter", None)
+                    if count_filter is not None:
+                        kwargs["filter"] = count_filter
+                    points, offset = self.scroll(**kwargs)
+                except Exception:  # pragma: no cover - compatibility fallback
+                    return SimpleNamespace(count=total)
+            except Exception:  # pragma: no cover - compatibility fallback
+                return SimpleNamespace(count=total)
+            total += len(points)
+            if offset is None:
+                break
+        return SimpleNamespace(count=total)
+
+    QdrantClient.count = _fallback_count  # type: ignore[attr-defined]
 
 FloatArray: TypeAlias = NDArray[np.floating[Any]]
 
@@ -178,6 +268,21 @@ class VectorStore:
         norm_ids = self._normalize_ids(id_list)
         recs = self.client.retrieve(collection_name=self.collection, ids=norm_ids)
         return [str(r.id) for r in recs]
+
+    def delete_by_filter(self, flt: rest.Filter) -> None:
+        selector = rest.FilterSelector(filter=flt)
+        self.client.delete(collection_name=self.collection, points_selector=selector)
+
+    def delete_by_book_id(self, book_id: str) -> None:
+        filter_payload = rest.Filter(
+            must=[
+                rest.FieldCondition(
+                    key="book_id",
+                    match=rest.MatchValue(value=book_id),
+                )
+            ]
+        )
+        self.delete_by_filter(filter_payload)
 
     def _normalize_ids(self, ids: Iterable[str]) -> list[str]:
         out: list[str] = []

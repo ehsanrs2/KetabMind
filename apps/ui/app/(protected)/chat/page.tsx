@@ -19,6 +19,8 @@ type SessionSummary = {
   lastActivity?: string | null;
 };
 
+type SessionPayload = NonNullable<SessionsResponse['sessions']>[number];
+
 type CitationLink = {
   label: string;
   href: string;
@@ -45,6 +47,21 @@ type SessionsResponse = {
     updated_at?: string | null;
   }>;
 };
+
+function extractSessions(payload: unknown): SessionPayload[] {
+  if (Array.isArray(payload)) {
+    return payload as SessionPayload[];
+  }
+
+  if (payload && typeof payload === 'object' && 'sessions' in payload) {
+    const sessions = (payload as SessionsResponse).sessions;
+    if (Array.isArray(sessions)) {
+      return sessions;
+    }
+  }
+
+  return [];
+}
 
 type MessagesResponse = {
   messages?: Array<{
@@ -98,13 +115,34 @@ function createMessageId() {
   return `msg-${Math.random().toString(36).slice(2)}`;
 }
 
-function normaliseSession(item: SessionsResponse['sessions'][number]): SessionSummary | null {
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const NUMERIC_ID_PATTERN = /^[0-9]+$/;
+
+function isSupportedSessionId(value: string | null | undefined): value is string {
+  if (!value) {
+    return false;
+  }
+
+  return UUID_PATTERN.test(value) || NUMERIC_ID_PATTERN.test(value);
+}
+
+function normaliseSession(item: SessionPayload | undefined): SessionSummary | null {
   if (!item) {
     return null;
   }
 
-  const id = item.id;
-  if (id === null || id === undefined) {
+  let id: string | undefined;
+  if (typeof item.id === 'number' && Number.isFinite(item.id)) {
+    id = String(item.id);
+  } else if (typeof item.id === 'string') {
+    const trimmed = item.id.trim();
+    if (trimmed.length > 0) {
+      id = trimmed;
+    }
+  }
+
+  if (!isSupportedSessionId(id)) {
     return null;
   }
 
@@ -575,8 +613,8 @@ export default function ChatPage() {
           throw new Error('Failed to load sessions');
         }
 
-        const payload = (await response.json()) as SessionsResponse;
-        const mapped = (payload.sessions ?? [])
+        const payload = await response.json();
+        const mapped = extractSessions(payload)
           .map(normaliseSession)
           .filter((item): item is SessionSummary => item !== null);
 
@@ -895,7 +933,7 @@ export default function ChatPage() {
       }
 
       const payload = await response.json();
-      const session = normaliseSession(payload.session ?? payload);
+      const session = normaliseSession((payload?.session ?? payload) as SessionPayload | undefined);
       if (session) {
         setSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
         setSelectedSessionId(session.id);
@@ -933,8 +971,14 @@ export default function ChatPage() {
         abortControllerRef.current?.abort();
       }
 
+      const trimmedId = sessionId.trim();
+      if (!isSupportedSessionId(trimmedId)) {
+        setError('Invalid session identifier.');
+        return;
+      }
+
       try {
-        const response = await fetch(`/sessions/${sessionId}`, {
+        const response = await fetch(`/sessions/${trimmedId}`, {
           method: 'DELETE',
           headers: csrfHeaders,
           credentials: 'include',

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Sequence, TypeVar
+from typing import TypeVar
 
 import structlog
 
@@ -53,7 +54,7 @@ class GPUOptimizer:
                 self.device = "cuda:0"
             else:
                 self.device = "cpu"
-        self._device_index = _parse_device_index(self.device if not isinstance(self.device, int) else self.device)
+        self._device_index = _parse_device_index(self.device)
 
     @property
     def reserved_memory_bytes(self) -> int:
@@ -61,7 +62,7 @@ class GPUOptimizer:
 
     def _is_cuda(self) -> bool:
         return (
-            isinstance(self.device, (str, int))
+            isinstance(self.device, str | int)
             and torch is not None
             and hasattr(torch, "cuda")
             and torch.cuda.is_available()
@@ -165,7 +166,11 @@ def quantization_config(mode: str | None) -> dict[str, object]:
     }
 
 
-def estimate_context(tokens: Iterable[T], optimizer: GPUOptimizer, max_tokens: int | None = None) -> Sequence[T]:
-    token_sequence = list(tokens) if not isinstance(tokens, (list, tuple, str)) else tokens
+def estimate_context(
+    tokens: Iterable[T],
+    optimizer: GPUOptimizer,
+    max_tokens: int | None = None,
+) -> Sequence[T]:
+    token_sequence = list(tokens) if not isinstance(tokens, list | tuple | str) else tokens
     trimmed = optimizer.trim_context(token_sequence, max_tokens=max_tokens)
     return trimmed

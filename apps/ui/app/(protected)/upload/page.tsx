@@ -19,10 +19,11 @@ type UploadResponse = {
   meta?: UploadMetadata;
   indexed_chunks?: number;
   message?: string;
-  detail?: string;
+  detail?: unknown;
   already_indexed?: boolean;
   deduplicated?: boolean;
   duplicate?: boolean;
+  error?: unknown;
   [key: string]: unknown;
 };
 
@@ -44,13 +45,18 @@ const INITIAL_FORM = {
 };
 
 function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
-  const raw =
-    typeof xhr.response === 'string' && xhr.response
-      ? xhr.response
-      : typeof xhr.responseText === 'string'
-        ? xhr.responseText
-        : null;
-  if (!raw || raw.trim().length === 0) {
+  const rawResponse = (xhr.response ?? xhr.responseText) as unknown;
+
+  if (rawResponse == null) {
+    return null;
+  }
+
+  if (typeof rawResponse === 'object') {
+    return rawResponse as UploadResponse;
+  }
+
+  const text = String(rawResponse);
+  if (!text.trim()) {
     return null;
   }
 
@@ -58,18 +64,84 @@ function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
     return JSON.parse(raw) as UploadResponse;
   } catch (error) {
     console.warn('Failed to parse upload response', error);
+    const fallback = text.trim();
+    return fallback ? { message: fallback } : null;
+  }
+}
+
+function isLikelyHtml(text: string): boolean {
+  const trimmed = text.trim();
+  return /^<!DOCTYPE html/i.test(trimmed) || /^<html/i.test(trimmed);
+}
+
+function normalizeMessage(text: string | null | undefined, fallback: string): string {
+  if (!text) {
+    return fallback;
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed || isLikelyHtml(trimmed)) {
+    return fallback;
+  }
+
+  return trimmed;
+}
+
+function extractFromDetail(detail: unknown): string | null {
+  if (typeof detail === 'string') {
+    const trimmed = detail.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (Array.isArray(detail)) {
+    for (const item of detail) {
+      const candidate = extractFromDetail(
+        typeof item === 'object' && item !== null
+          ? (item as Record<string, unknown>).msg ??
+            (item as Record<string, unknown>).message ??
+            (item as Record<string, unknown>).detail ??
+            item
+          : item,
+      );
+      if (candidate) {
+        return candidate;
+      }
+    }
     return null;
   }
+
+  if (typeof detail === 'object' && detail !== null) {
+    const record = detail as Record<string, unknown>;
+    return (
+      extractFromDetail(record.msg) ??
+      extractFromDetail(record.message) ??
+      extractFromDetail(record.detail)
+    );
+  }
+
+  return null;
 }
 
 function extractMessage(payload: UploadResponse | null, fallback: string): string {
   if (payload) {
-    if (typeof payload.detail === 'string' && payload.detail.trim().length > 0) {
-      return payload.detail;
+    const detailMessage = extractFromDetail(payload.detail);
+    if (detailMessage) {
+      return normalizeMessage(detailMessage, fallback);
     }
 
-    if (typeof payload.message === 'string' && payload.message.trim().length > 0) {
-      return payload.message;
+    if (typeof payload.message === 'string') {
+      return normalizeMessage(payload.message, fallback);
+    }
+
+    if (
+      typeof payload.error === 'object' &&
+      payload.error !== null &&
+      'message' in (payload.error as Record<string, unknown>)
+    ) {
+      return normalizeMessage(
+        String((payload.error as Record<string, unknown>).message ?? ''),
+        fallback,
+      );
     }
   }
 
@@ -137,7 +209,7 @@ export default function UploadPage() {
     try {
       const payload = await new Promise<UploadResponse>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/upload');
+        xhr.open('POST', '/api/upload');
         xhr.responseType = 'text';
         xhr.withCredentials = true;
 
@@ -203,8 +275,11 @@ export default function UploadPage() {
       return;
     }
 
-    if (!uploadResponse.path) {
-      setIndexStatus({ type: 'error', message: 'Unable to locate uploaded file for indexing. Please upload again.' });
+    if (!uploadResponse.file_hash) {
+      setIndexStatus({
+        type: 'error',
+        message: 'Unable to trigger indexing: missing file hash.',
+      });
       return;
     }
 
@@ -212,21 +287,7 @@ export default function UploadPage() {
     setIndexStatus(null);
 
     try {
-      const indexPayload: Record<string, unknown> = {
-        path: uploadResponse.path,
-      };
-      const metaSource: UploadMetadata | undefined = uploadResponse.meta
-        ? { ...uploadResponse.meta }
-        : undefined;
-      const maybeMeta: UploadMetadata = metaSource ?? ({ ...formValues } as UploadMetadata);
-      (['author', 'year', 'subject', 'title'] as const).forEach((key) => {
-        const value = maybeMeta[key];
-        if (value !== undefined && value !== null && value !== '') {
-          indexPayload[key] = value;
-        }
-      });
-
-      const response = await fetch('/index', {
+      const response = await fetch('/api/index', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -237,22 +298,49 @@ export default function UploadPage() {
       });
 
       const text = await response.text();
-      let json: UploadResponse | null = null;
+      let json: Record<string, unknown> | null = null;
       if (text) {
         try {
-          json = JSON.parse(text) as UploadResponse;
+          json = JSON.parse(text) as Record<string, unknown>;
         } catch (error) {
           console.warn('Failed to parse index response', error);
         }
       }
 
       if (!response.ok) {
-        throw new Error(extractMessage(json, `Indexing failed with status ${response.status}`));
+        throw new Error(
+          extractMessage(json as UploadResponse | null, `Indexing failed with status ${response.status}`),
+        );
+      }
+
+      let indexMessage = 'Indexing started.';
+      if (json && typeof json === 'object') {
+        const indexedField = json.indexed;
+        if (typeof indexedField === 'boolean') {
+          indexMessage = indexedField ? 'Indexing completed.' : 'Indexing failed.';
+        } else {
+          const newCount = json.new;
+          const skippedCount = json.skipped;
+          if (typeof newCount === 'number' || typeof skippedCount === 'number') {
+            const parts: string[] = [];
+            if (typeof newCount === 'number') {
+              parts.push(`${newCount} new`);
+            }
+            if (typeof skippedCount === 'number') {
+              parts.push(`${skippedCount} skipped`);
+            }
+            indexMessage = `Indexing completed: ${parts.join(', ')}.`;
+          } else {
+            indexMessage = extractMessage(json as UploadResponse | null, 'Indexing started.');
+          }
+        }
+      } else {
+        indexMessage = extractMessage(json as UploadResponse | null, 'Indexing started.');
       }
 
       setIndexStatus({
         type: 'success',
-        message: extractMessage(json, 'Indexing started.'),
+        message: indexMessage,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Indexing failed.';
@@ -260,7 +348,7 @@ export default function UploadPage() {
     } finally {
       setIsIndexing(false);
     }
-  }, [csrfToken, formValues, uploadResponse]);
+  }, [csrfToken, uploadResponse]);
 
   const clampedProgress = progress === null ? 0 : Math.min(100, Math.max(0, progress));
   const progressFillStyle = useMemo(

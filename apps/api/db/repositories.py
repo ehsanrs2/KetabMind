@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -130,9 +130,7 @@ class SessionRepository(_BaseRepository):
 
         return self._all(stmt)
 
-    def get(
-        self, session_id: int, *, include_deleted: bool = False
-    ) -> models.Session | None:
+    def get(self, session_id: int, *, include_deleted: bool = False) -> models.Session | None:
         stmt = select(models.Session).where(
             models.Session.id == session_id,
             models.Session.owner_id == self.owner_id,
@@ -147,7 +145,7 @@ class SessionRepository(_BaseRepository):
             return False
         if record.deleted_at is not None:
             return False
-        record.deleted_at = datetime.now(timezone.utc)
+        record.deleted_at = datetime.now(UTC)
         self.session.add(record)
         return True
 
@@ -289,7 +287,7 @@ class MessageRepository(_BaseRepository):
 def delete_sessions_older_than(session: Session, *, older_than: datetime) -> int:
     cutoff_value = older_than
     if isinstance(older_than, datetime) and older_than.tzinfo is not None:
-        cutoff_value = older_than.astimezone(timezone.utc)
+        cutoff_value = older_than.astimezone(UTC)
         bind = session.get_bind()
         if bind is not None and bind.dialect.name == "sqlite":
             cutoff_value = cutoff_value.replace(tzinfo=None)

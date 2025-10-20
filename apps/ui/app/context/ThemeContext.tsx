@@ -65,10 +65,13 @@ export function ThemeProvider({
   });
 
   useEffect(() => {
-    if (initialTheme) {
-      setTheme(initialTheme);
+    if (typeof window === 'undefined' || initialTheme) {
+      return;
     }
-  }, [initialTheme]);
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const resolved = normaliseTheme(stored) ?? defaultTheme;
+    setTheme(resolved);
+  }, [defaultTheme, initialTheme]);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {

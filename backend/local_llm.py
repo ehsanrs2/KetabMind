@@ -9,18 +9,18 @@ usage manageable on small GPUs.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
+from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional
 
 import requests
 import torch
 from requests import RequestException
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ LOGGER = logging.getLogger(__name__)
 _DEFAULT_OLLAMA_MODEL = os.environ.get("LOCAL_LLM_MODEL", "llama3")
 _DEFAULT_HF_MODEL = os.environ.get("LOCAL_LLM_HF_MODEL", "distilgpt2")
 _OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-_PIPELINE_CACHE: Dict[str, object] = {}
+_PIPELINE_CACHE: dict[str, object] = {}
 
 
 @dataclass
@@ -38,7 +38,7 @@ class _OllamaConfig:
     timeout: float
 
 
-def _ollama_config(model: Optional[str]) -> _OllamaConfig:
+def _ollama_config(model: str | None) -> _OllamaConfig:
     return _OllamaConfig(
         model=model or _DEFAULT_OLLAMA_MODEL,
         url=f"{_OLLAMA_URL.rstrip('/')}/api/generate",
@@ -74,7 +74,7 @@ def _ensure_citations(text: str) -> str:
     return f"{text} {fallback}" if text else fallback
 
 
-def _ollama_generate(prompt: str, config: _OllamaConfig) -> Optional[str]:
+def _ollama_generate(prompt: str, config: _OllamaConfig) -> str | None:
     """Try to generate a response using an Ollama HTTP endpoint."""
 
     try:
@@ -111,12 +111,12 @@ def _ollama_generate(prompt: str, config: _OllamaConfig) -> Optional[str]:
     return combined if combined else None
 
 
-def _quantization_kwargs() -> Dict[str, object]:
+def _quantization_kwargs() -> dict[str, object]:
     """Infer quantisation kwargs based on environment configuration."""
 
     quant = os.environ.get("LOCAL_LLM_QUANT", "").strip().lower()
     has_cuda = torch.cuda.is_available()
-    kwargs: Dict[str, object] = {}
+    kwargs: dict[str, object] = {}
 
     if has_cuda:
         if quant in {"4bit", "4"}:
@@ -162,7 +162,7 @@ def _get_hf_pipeline(model_name: str):
     return text_gen
 
 
-def _hf_generate(prompt: str, model_name: str) -> Optional[str]:
+def _hf_generate(prompt: str, model_name: str) -> str | None:
     """Generate text using a local HuggingFace model."""
 
     text_gen = _get_hf_pipeline(model_name)
@@ -184,7 +184,7 @@ def _hf_generate(prompt: str, model_name: str) -> Optional[str]:
     return generated.strip()
 
 
-def generate(prompt: str, model: Optional[str] = None) -> str:
+def generate(prompt: str, model: str | None = None) -> str:
     """Generate text with citations using Ollama or a local HuggingFace model."""
 
     if not isinstance(prompt, str) or not prompt.strip():
@@ -208,5 +208,21 @@ def generate(prompt: str, model: Optional[str] = None) -> str:
     raise RuntimeError("Local LLM generation failed: no backend produced output")
 
 
-__all__ = ["generate"]
+async def generate_stream(prompt: str, model: str | None = None) -> AsyncIterator[str]:
+    """Asynchronously yield portions of the generated response."""
 
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("Prompt must be a non-empty string")
+
+    response = generate(prompt, model=model)
+    words = response.split()
+    if not words:
+        return
+
+    for index, word in enumerate(words):
+        suffix = "" if index == len(words) - 1 else " "
+        await asyncio.sleep(0.05)
+        yield f"{word}{suffix}"
+
+
+__all__ = ["generate", "generate_stream"]

@@ -13,27 +13,31 @@ import mimetypes
 import shutil
 import tempfile
 import time
-from datetime import datetime, timedelta, timezone
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar, cast
 
 from limits import RateLimitItemPerSecond
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
+    REGISTRY,
     Counter,
     Gauge,
     Histogram,
-    REGISTRY,
     generate_latest,
 )
 from slowapi import Limiter
+from sqlalchemy import func, select
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
 import structlog
 from apps.api.auth import authenticate_user, create_access_token, get_current_user, get_user_profile
 from apps.api.db import models, repositories
 from apps.api.db.session import session_scope
+from apps.api.middleware import RequestIDMiddleware
 from apps.api.routes.query import build_query_response
 from apps.api.schemas import (
     BookmarkCreate,
@@ -42,22 +46,19 @@ from apps.api.schemas import (
     MessageCreate,
     Metadata,
     SessionCreate,
+    StreamMessageRequest,
 )
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
 from core.config import settings
 from core.fts import get_backend as get_fts_backend
+from exporting import export_answer
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from exporting import export_answer
-from sqlalchemy import func, select
 from utils.hash import sha256_file
 from utils.logging import configure_logging
 from utils.pydantic_compat import BaseModel
-from apps.api.middleware import RequestIDMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 
 if TYPE_CHECKING:
     from core.index import IndexResult as IndexResultType
@@ -72,6 +73,11 @@ else:  # pragma: no cover - runtime import
 configure_logging()
 
 log = structlog.get_logger(__name__)
+
+try:  # pragma: no cover - optional local backend
+    from backend import local_llm as _local_llm
+except Exception:  # pragma: no cover - dependency not available
+    _local_llm = None
 
 
 def _client_identifier(request: Request) -> str:
@@ -124,17 +130,16 @@ class _GZipMiddleware(BaseHTTPMiddleware):
 app = FastAPI(title="KetabMind API")
 
 SESSION_CLEANUP_INTERVAL_SECONDS = 3600
+STREAMING_DELAY_SECONDS = 0.05
 
 
 def _cleanup_expired_sessions_once() -> int:
     retention_days = settings.history_retention_days
     if retention_days <= 0:
         return 0
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     with session_scope() as db_session:
-        removed = repositories.delete_sessions_older_than(
-            db_session, older_than=cutoff
-        )
+        removed = repositories.delete_sessions_older_than(db_session, older_than=cutoff)
         if removed:
             log.info(
                 "sessions.cleanup",
@@ -154,6 +159,7 @@ async def _session_cleanup_worker() -> None:
         except Exception:  # pragma: no cover - defensive logging
             log.warning("sessions.cleanup_failed", exc_info=True)
         await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+
 
 rate_limit_qps = settings.rate_limit_qps
 limiter_enabled = bool(rate_limit_qps and rate_limit_qps > 0)
@@ -209,6 +215,7 @@ async def _on_shutdown() -> None:
     task.cancel()
     with suppress(asyncio.CancelledError):
         await task
+
 
 if "REQUEST_COUNTER" not in globals():
     existing_counter = REGISTRY._names_to_collectors.get("api_requests_total")
@@ -343,6 +350,77 @@ def _safe_json_mapping(raw: str | None) -> dict[str, Any] | None:
     return None
 
 
+HistoryEntry = tuple[str, str]
+
+
+def _build_stream_prompt(history: list[HistoryEntry], include_context: bool) -> str:
+    """Construct a conversational prompt from the provided history."""
+
+    relevant = history if include_context else history[-1:]
+    if not relevant:
+        return "assistant:"
+    lines = [f"{role}: {content}" for role, content in relevant]
+    lines.append("assistant:")
+    return "\n".join(lines)
+
+
+def _compose_streamed_reply(history: list[HistoryEntry], payload: StreamMessageRequest) -> str:
+    """Return a deterministic simulated assistant answer."""
+
+    prior_messages = max(len(history) - 1, 0)
+    if not payload.context:
+        prior_messages = 0
+    model_label = "مدل محلی" if payload.model == "ollama" else "مدل ابری"
+    context_clause = ""
+    if prior_messages:
+        context_clause = f" پس از مرور {prior_messages} پیام قبلی"
+    elif payload.context:
+        context_clause = " با استفاده از گفت‌وگوی فعلی"
+    temperature_clause = ""
+    if payload.temperature is not None:
+        temperature_clause = f" مقدار دما {payload.temperature:.1f} تنظیم شده است."
+    user_prompt = payload.content.strip() or "پرسش"
+    return (
+        f"{model_label} KetabMind{context_clause} جمع‌بندی می‌کند که برای پرسش «{user_prompt}» "
+        f"مطالعه بخش‌های کلیدی کتاب و یادداشت‌برداری دقیق سودمند است.{temperature_clause}"
+    )
+
+
+async def _simulate_streaming_response(text: str) -> AsyncIterator[str]:
+    """Yield chunks of text with delays to mimic LLM streaming."""
+
+    words = text.split()
+    if not words:
+        return
+    for index, word in enumerate(words):
+        suffix = "" if index == len(words) - 1 else " "
+        await asyncio.sleep(STREAMING_DELAY_SECONDS)
+        yield f"{word}{suffix}"
+
+
+def _persist_assistant_message(session_id: int, owner_id: int, content: str) -> None:
+    """Persist the assistant response for the provided session."""
+
+    if not content:
+        return
+    with session_scope() as db_session:
+        message_repo = repositories.MessageRepository(db_session, owner_id)
+        try:
+            message_repo.create(
+                session_id=session_id,
+                role="assistant",
+                content=content,
+                citations=None,
+                meta=None,
+            )
+        except ValueError:  # pragma: no cover - session removed concurrently
+            log.warning(
+                "stream.persist_failed",
+                session_id=session_id,
+                owner_id=owner_id,
+            )
+
+
 def _serialize_message(message: models.Message) -> dict[str, Any]:
     citations = _safe_json_list(message.citations)
     meta = _safe_json_mapping(message.meta)
@@ -402,9 +480,7 @@ def _serialize_bookmark(bookmark: models.Bookmark) -> dict[str, Any]:
 def _ensure_owner(db_session, user_profile: Mapping[str, Any]) -> models.User:
     email = user_profile.get("email")
     if not isinstance(email, str) or not email:
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile"
-        )
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
     normalized_email = email.strip().lower()
     repo = repositories.UserRepository(db_session)
     user = repo.get_by_email(normalized_email)
@@ -474,6 +550,12 @@ def _index_path(*args: Any, **kwargs: Any) -> IndexResultType:
     return _index(*args, **kwargs)
 
 
+def _reindex_existing_file(*args: Any, **kwargs: Any) -> IndexResultType:
+    from core.index import reindex_existing_file as _reindex
+
+    return _reindex(*args, **kwargs)
+
+
 def _update_indexed_path(*args: Any, **kwargs: Any) -> None:
     from core.index import update_indexed_file_path as _update
 
@@ -516,9 +598,12 @@ def _ensure_upload_root() -> Path:
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Upload directory not configured",
         )
-    root = Path(upload_dir)
+    root = Path(upload_dir).expanduser()
     root.mkdir(parents=True, exist_ok=True)
-    return root
+    try:
+        return root.resolve()
+    except FileNotFoundError:  # pragma: no cover - defensive fallback
+        return root
 
 
 async def _write_upload_to_tempfile(file: UploadFile, filename: Path) -> Path:
@@ -645,7 +730,10 @@ def login(req: LoginRequest) -> JSONResponse:
 
 
 @_get("/me")
-def me(request: Request, current_user: Annotated[dict[str, Any], Depends(get_current_user)]) -> JSONResponse:
+def me(
+    request: Request,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> JSONResponse:
     headers = _csrf_headers(request)
     return JSONResponse(current_user, headers=headers)
 
@@ -757,11 +845,15 @@ def index(
     req: IndexRequest,
     _user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, Any]:
-    try:
+    collection = req.collection or settings.qdrant_collection
+    owner_id = str(_user.get("id") or "")
+    if not owner_id:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
+
+    if req.path:
         path = Path(req.path)
         if not path.exists():
-            raise SystemExit(f"File not found: {path}")
-        collection = req.collection or settings.qdrant_collection
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"File not found: {path}")
         file_hash = sha256_file(path)
         existing = _find_indexed_file(collection, file_hash)
         if existing:
@@ -774,14 +866,68 @@ def index(
                 "file_hash": existing.file_hash,
                 "indexed_chunks": existing.indexed_chunks,
             }
-        result = _index_path(
-            path,
-            collection=collection,
-            file_hash=file_hash,
-            metadata=req.metadata(),
+        try:
+            result = _index_path(
+                path,
+                collection=collection,
+                file_hash=file_hash,
+                metadata=req.metadata(),
+            )
+        except SystemExit as exc:  # invalid path or type
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return _serialize_index_result(result)
+
+    if not req.file_hash:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="file_hash is required when path is not provided",
         )
-    except SystemExit as exc:  # invalid path or type
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    existing = _find_indexed_file(collection, req.file_hash)
+    if not existing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Indexed file not found")
+
+    if req.book_id and str(req.book_id) != existing.book_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Book ID does not match stored record",
+        )
+
+    stored_path = existing.path
+    if stored_path is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="Stored file path unavailable for reindexing",
+        )
+
+    root = _ensure_upload_root()
+    stored_path = stored_path.resolve()
+    try:
+        stored_path.relative_to(root / owner_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Forbidden") from exc
+
+    if not stored_path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Stored file not found")
+
+    request_meta = req.metadata()
+    merged_meta: dict[str, Any] = {}
+    if isinstance(existing.metadata, dict):
+        merged_meta.update(existing.metadata)
+    if request_meta:
+        merged_meta.update(request_meta)
+
+    meta_arg = merged_meta if merged_meta else None
+
+    try:
+        result = _reindex_existing_file(
+            collection=collection,
+            file_hash=req.file_hash,
+            metadata=meta_arg,
+        )
+    except SystemExit as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     return _serialize_index_result(result)
 
 
@@ -1065,6 +1211,66 @@ def create_session_message(
         return {"message": _serialize_message(message)}
 
 
+@_post("/sessions/{session_id}/messages/stream")
+async def stream_session_message(
+    session_id: str,
+    payload: StreamMessageRequest,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> StreamingResponse:
+    """Stream an assistant response for the given session using server-sent events."""
+
+    session_pk = _parse_identifier(session_id, field="session_id")
+    include_context = bool(payload.context)
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        session_repo = repositories.SessionRepository(db_session, owner.id)
+        session_obj = session_repo.get(session_pk)
+        if session_obj is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        message_repo = repositories.MessageRepository(db_session, owner.id)
+        user_message = message_repo.create(
+            session_id=session_obj.id,
+            role="user",
+            content=payload.content,
+            citations=None,
+            meta=None,
+        )
+        db_session.refresh(user_message)
+        history_records = message_repo.list_for_session(session_obj.id)
+        history: list[HistoryEntry] = [
+            (record.role, record.content or "") for record in history_records
+        ]
+        session_db_id = session_obj.id
+        owner_id = owner.id
+
+    prompt = _build_stream_prompt(history, include_context)
+
+    async def _model_stream() -> AsyncIterator[str]:
+        if payload.model == "ollama" and _local_llm is not None:
+            stream_fn = getattr(_local_llm, "generate_stream", None)
+            if callable(stream_fn):
+                async for chunk in stream_fn(prompt, model=payload.model):
+                    if chunk:
+                        yield chunk
+                return
+        response_text = _compose_streamed_reply(history, payload)
+        async for chunk in _simulate_streaming_response(response_text):
+            yield chunk
+
+    async def _event_stream() -> AsyncIterator[str]:
+        collected: list[str] = []
+        async for piece in _model_stream():
+            if not piece:
+                continue
+            collected.append(piece)
+            yield f"data: {piece}\n\n"
+        final_text = "".join(collected).strip()
+        _persist_assistant_message(session_db_id, owner_id, final_text)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
+
+
 @_post("/export")
 def export_message(
     payload: ExportRequest,
@@ -1104,9 +1310,7 @@ def export_message(
         media_type = "application/pdf"
         filename = "answer.pdf"
     else:
-        media_type = (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         filename = "answer.docx"
 
     headers = {"Content-Disposition": f"attachment; filename={filename}"}
