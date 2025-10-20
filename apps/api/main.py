@@ -1231,10 +1231,7 @@ async def stream_session_message(
         if payload.model == "ollama" and _local_llm is not None:
             stream_fn = getattr(_local_llm, "generate_stream", None)
             if callable(stream_fn):
-                # Passing ``None`` delegates model selection to the local backend so that
-                # deployments can rely on the configured default (e.g. LOCAL_LLM_MODEL)
-                # instead of the literal provider flag from the request payload.
-                async for chunk in stream_fn(prompt, model=None):
+                async for chunk in stream_fn(prompt, model=payload.model):
                     if chunk:
                         yield chunk
                 return
