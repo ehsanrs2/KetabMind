@@ -13,7 +13,7 @@ import mimetypes
 import shutil
 import tempfile
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -46,6 +46,7 @@ from apps.api.schemas import (
     MessageCreate,
     Metadata,
     SessionCreate,
+    StreamMessageRequest,
 )
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError
@@ -72,6 +73,11 @@ else:  # pragma: no cover - runtime import
 configure_logging()
 
 log = structlog.get_logger(__name__)
+
+try:  # pragma: no cover - optional local backend
+    from backend import local_llm as _local_llm
+except Exception:  # pragma: no cover - dependency not available
+    _local_llm = None
 
 
 def _client_identifier(request: Request) -> str:
@@ -124,6 +130,7 @@ class _GZipMiddleware(BaseHTTPMiddleware):
 app = FastAPI(title="KetabMind API")
 
 SESSION_CLEANUP_INTERVAL_SECONDS = 3600
+STREAMING_DELAY_SECONDS = 0.05
 
 
 def _cleanup_expired_sessions_once() -> int:
@@ -341,6 +348,77 @@ def _safe_json_mapping(raw: str | None) -> dict[str, Any] | None:
     if isinstance(parsed, Mapping):
         return dict(parsed)
     return None
+
+
+HistoryEntry = tuple[str, str]
+
+
+def _build_stream_prompt(history: list[HistoryEntry], include_context: bool) -> str:
+    """Construct a conversational prompt from the provided history."""
+
+    relevant = history if include_context else history[-1:]
+    if not relevant:
+        return "assistant:"
+    lines = [f"{role}: {content}" for role, content in relevant]
+    lines.append("assistant:")
+    return "\n".join(lines)
+
+
+def _compose_streamed_reply(history: list[HistoryEntry], payload: StreamMessageRequest) -> str:
+    """Return a deterministic simulated assistant answer."""
+
+    prior_messages = max(len(history) - 1, 0)
+    if not payload.context:
+        prior_messages = 0
+    model_label = "مدل محلی" if payload.model == "ollama" else "مدل ابری"
+    context_clause = ""
+    if prior_messages:
+        context_clause = f" پس از مرور {prior_messages} پیام قبلی"
+    elif payload.context:
+        context_clause = " با استفاده از گفت‌وگوی فعلی"
+    temperature_clause = ""
+    if payload.temperature is not None:
+        temperature_clause = f" مقدار دما {payload.temperature:.1f} تنظیم شده است."
+    user_prompt = payload.content.strip() or "پرسش"
+    return (
+        f"{model_label} KetabMind{context_clause} جمع‌بندی می‌کند که برای پرسش «{user_prompt}» "
+        f"مطالعه بخش‌های کلیدی کتاب و یادداشت‌برداری دقیق سودمند است.{temperature_clause}"
+    )
+
+
+async def _simulate_streaming_response(text: str) -> AsyncIterator[str]:
+    """Yield chunks of text with delays to mimic LLM streaming."""
+
+    words = text.split()
+    if not words:
+        return
+    for index, word in enumerate(words):
+        suffix = "" if index == len(words) - 1 else " "
+        await asyncio.sleep(STREAMING_DELAY_SECONDS)
+        yield f"{word}{suffix}"
+
+
+def _persist_assistant_message(session_id: int, owner_id: int, content: str) -> None:
+    """Persist the assistant response for the provided session."""
+
+    if not content:
+        return
+    with session_scope() as db_session:
+        message_repo = repositories.MessageRepository(db_session, owner_id)
+        try:
+            message_repo.create(
+                session_id=session_id,
+                role="assistant",
+                content=content,
+                citations=None,
+                meta=None,
+            )
+        except ValueError:  # pragma: no cover - session removed concurrently
+            log.warning(
+                "stream.persist_failed",
+                session_id=session_id,
+                owner_id=owner_id,
+            )
 
 
 def _serialize_message(message: models.Message) -> dict[str, Any]:
@@ -1113,6 +1191,69 @@ def create_session_message(
         )
         db_session.refresh(message)
         return {"message": _serialize_message(message)}
+
+
+@_post("/sessions/{session_id}/messages/stream")
+async def stream_session_message(
+    session_id: str,
+    payload: StreamMessageRequest,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> StreamingResponse:
+    """Stream an assistant response for the given session using server-sent events."""
+
+    session_pk = _parse_identifier(session_id, field="session_id")
+    include_context = bool(payload.context)
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        session_repo = repositories.SessionRepository(db_session, owner.id)
+        session_obj = session_repo.get(session_pk)
+        if session_obj is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        message_repo = repositories.MessageRepository(db_session, owner.id)
+        user_message = message_repo.create(
+            session_id=session_obj.id,
+            role="user",
+            content=payload.content,
+            citations=None,
+            meta=None,
+        )
+        db_session.refresh(user_message)
+        history_records = message_repo.list_for_session(session_obj.id)
+        history: list[HistoryEntry] = [
+            (record.role, record.content or "") for record in history_records
+        ]
+        session_db_id = session_obj.id
+        owner_id = owner.id
+
+    prompt = _build_stream_prompt(history, include_context)
+
+    async def _model_stream() -> AsyncIterator[str]:
+        if payload.model == "ollama" and _local_llm is not None:
+            stream_fn = getattr(_local_llm, "generate_stream", None)
+            if callable(stream_fn):
+                # Passing ``None`` delegates model selection to the local backend so that
+                # deployments can rely on the configured default (e.g. LOCAL_LLM_MODEL)
+                # instead of the literal provider flag from the request payload.
+                async for chunk in stream_fn(prompt, model=None):
+                    if chunk:
+                        yield chunk
+                return
+        response_text = _compose_streamed_reply(history, payload)
+        async for chunk in _simulate_streaming_response(response_text):
+            yield chunk
+
+    async def _event_stream() -> AsyncIterator[str]:
+        collected: list[str] = []
+        async for piece in _model_stream():
+            if not piece:
+                continue
+            collected.append(piece)
+            yield f"data: {piece}\n\n"
+        final_text = "".join(collected).strip()
+        _persist_assistant_message(session_db_id, owner_id, final_text)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
 
 @_post("/export")
