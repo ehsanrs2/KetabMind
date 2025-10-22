@@ -115,6 +115,20 @@ function createMessageId() {
   return `msg-${Math.random().toString(36).slice(2)}`;
 }
 
+class SessionNotFoundError extends Error {
+  constructor(message = 'Session not found') {
+    super(message);
+    this.name = 'SessionNotFoundError';
+  }
+}
+
+class SSEParseError extends Error {
+  constructor(message = 'Malformed SSE stream') {
+    super(message);
+    this.name = 'SSEParseError';
+  }
+}
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^[0-9]+$/;
@@ -1036,40 +1050,81 @@ export default function ChatPage() {
       abortControllerRef.current = controller;
       setIsStreaming(true);
 
-      const params = new URLSearchParams({
-        session_id: selectedSessionId,
-        stream: 'true',
-      });
+      const baseStreamPath = `/sessions/${encodeURIComponent(selectedSessionId)}/messages/stream`;
+      const streamParams = new URLSearchParams();
       if (debugEnabled) {
-        params.set('debug', 'true');
+        streamParams.set('debug', 'true');
       }
+      const streamUrl =
+        streamParams.size > 0 ? `${baseStreamPath}?${streamParams.toString()}` : baseStreamPath;
 
       let finalAnswer: string | null = null;
       let finalCitations: CitationLink[] | undefined;
       let finalMeta: Record<string, unknown> | null = null;
       let debugPayload: unknown = null;
+      let receivedDone = false;
 
       try {
-        const response = await fetch(`/query?${params.toString()}`, {
+        const response = await fetch(streamUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...csrfHeaders,
           },
           credentials: 'include',
-          body: JSON.stringify({ q: trimmedPrompt }),
+          body: JSON.stringify({ content: trimmedPrompt, context: true }),
           signal: controller.signal,
         });
 
-        const streamBody = response.body as {
-          getReader?: () => ReadableStreamDefaultReader<Uint8Array>;
-        } | null;
-        const reader = streamBody?.getReader?.();
-        if (!response.ok || !reader) {
+        if (response.status === 404) {
+          throw new SessionNotFoundError('Session not found');
+        }
+
+        if (!response.ok) {
           throw new Error('Query failed');
         }
-        const decoder = new TextDecoder();
+
+        const streamBody = response.body as ReadableStream<Uint8Array> | null;
+
+        type ReaderType =
+          | ReadableStreamDefaultReader<string>
+          | ReadableStreamDefaultReader<Uint8Array>
+          | null;
+
+        let reader: ReaderType = null;
+        let usingTextDecoderStream = false;
+
+        if (streamBody) {
+          const canUseTextDecoderStream =
+            typeof TextDecoderStream !== 'undefined' &&
+            'pipeThrough' in streamBody &&
+            typeof streamBody.pipeThrough === 'function';
+
+          if (canUseTextDecoderStream) {
+            try {
+              const textStream = streamBody.pipeThrough(new TextDecoderStream());
+              if (textStream && typeof textStream.getReader === 'function') {
+                reader = textStream.getReader();
+                usingTextDecoderStream = true;
+              }
+            } catch {
+              // Fallback handled below when TextDecoderStream is unavailable.
+            }
+          }
+
+          if (!reader && typeof streamBody.getReader === 'function') {
+            reader = streamBody.getReader();
+          }
+        }
+
+        if (!reader) {
+          throw new Error('Query failed');
+        }
+
+        const decoder = usingTextDecoderStream ? null : new TextDecoder();
         let buffer = '';
+        let eventDataLines: string[] = [];
+        let shouldStop = false;
 
         const applyAssistantUpdate = (updater: (previous: ChatMessage) => ChatMessage) => {
           setMessages((previous) =>
@@ -1125,36 +1180,101 @@ export default function ChatPage() {
           }
         };
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
+        const finalizeEvent = () => {
+          if (!eventDataLines.length) {
+            return;
           }
-          buffer += decoder.decode(value, { stream: true });
+          const payload = eventDataLines.join('\n');
+          eventDataLines = [];
+          if (payload === '[DONE]') {
+            receivedDone = true;
+            shouldStop = true;
+            return;
+          }
+          let parsed: Record<string, unknown>;
+          try {
+            parsed = JSON.parse(payload) as Record<string, unknown>;
+          } catch (error) {
+            throw new SSEParseError('Malformed SSE payload');
+          }
+          processChunk(parsed);
+        };
+
+        const handleLine = (rawLine: string, allowFallbackData = false) => {
+          const line = rawLine.replace(/\r$/, '');
+          if (!line) {
+            finalizeEvent();
+            return;
+          }
+          if (line.startsWith(':')) {
+            return;
+          }
+          if (line.startsWith('data:')) {
+            eventDataLines.push(line.slice(5).trimStart());
+            return;
+          }
+          if (allowFallbackData) {
+            eventDataLines.push(line);
+            return;
+          }
+          throw new SSEParseError('Malformed SSE event');
+        };
+
+        const appendChunk = (text: string, flush = false) => {
+          if (text) {
+            buffer += text;
+          }
 
           let newlineIndex = buffer.indexOf('\n');
           while (newlineIndex !== -1) {
-            const line = buffer.slice(0, newlineIndex).trim();
+            const line = buffer.slice(0, newlineIndex);
             buffer = buffer.slice(newlineIndex + 1);
-            if (line) {
-              try {
-                const parsed = JSON.parse(line) as Record<string, unknown>;
-                processChunk(parsed);
-              } catch (err) {
-                console.warn('Failed to parse stream chunk', err);
-              }
+            handleLine(line);
+            if (shouldStop) {
+              buffer = '';
+              eventDataLines = [];
+              return;
             }
             newlineIndex = buffer.indexOf('\n');
           }
+
+          if (flush) {
+            if (buffer.length > 0) {
+              handleLine(buffer, true);
+              buffer = '';
+            }
+            finalizeEvent();
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            if (!usingTextDecoderStream && decoder) {
+              const remainder = decoder.decode();
+              if (remainder) {
+                appendChunk(remainder);
+              }
+            }
+            appendChunk('', true);
+            break;
+          }
+
+          const chunkText = usingTextDecoderStream
+            ? (typeof value === 'string' ? value : String(value ?? ''))
+            : decoder!.decode(value as Uint8Array, { stream: true });
+
+          if (chunkText) {
+            appendChunk(chunkText);
+          }
+
+          if (shouldStop) {
+            break;
+          }
         }
 
-        if (buffer.trim().length > 0) {
-          try {
-            const parsed = JSON.parse(buffer) as Record<string, unknown>;
-            processChunk(parsed);
-          } catch (err) {
-            console.warn('Failed to parse trailing stream chunk', err);
-          }
+        if (!receivedDone) {
+          throw new SSEParseError('Stream ended without completion signal');
         }
 
         applyAssistantUpdate((message) => ({
@@ -1176,13 +1296,27 @@ export default function ChatPage() {
         await loadSessions({ query: sessionSearch });
       } catch (err) {
         console.warn('Chat request failed', err);
-        setError('Chat failed. Please try again.');
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return;
+        }
+
+        let errorMessage = 'Streaming response failed. Please try again.';
+        if (err instanceof SessionNotFoundError) {
+          errorMessage = 'Selected session could not be found. Please choose or create another session.';
+          await loadSessions({ query: sessionSearch });
+        } else if (err instanceof SSEParseError) {
+          errorMessage = 'Received an invalid response from the server. Please try again.';
+        } else if (err instanceof TypeError) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        }
+
+        setError(errorMessage);
         setMessages((previous) =>
           previous.map((message) =>
             message.id === assistantMessage.id
               ? {
                   ...message,
-                  content: 'Chat failed. Please try again.',
+                  content: errorMessage,
                 }
               : message,
           ),

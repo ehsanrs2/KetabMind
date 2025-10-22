@@ -20,6 +20,10 @@ const config = {
       rewrite('/sessions', '/sessions'),
       rewrite('/sessions/:sessionId', '/sessions/:sessionId'),
       rewrite('/sessions/:sessionId/messages', '/sessions/:sessionId/messages'),
+      rewrite(
+        '/sessions/:sessionId/messages/stream',
+        '/sessions/:sessionId/messages/stream',
+      ),
       rewrite('/bookmarks', '/bookmarks'),
       rewrite('/bookmarks/:bookmarkId', '/bookmarks/:bookmarkId'),
       rewrite('/book/:bookId/page/:page/view', '/book/:bookId/page/:page/view'),
