@@ -129,6 +129,8 @@ class SSEParseError extends Error {
   }
 }
 
+const STREAM_INCOMPLETE_ERROR = 'STREAM_INCOMPLETE';
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^[0-9]+$/;
@@ -1046,6 +1048,12 @@ export default function ChatPage() {
       setMessages((previous) => [...previous, userMessage, assistantMessage]);
       await persistMessage(selectedSessionId, userMessage);
 
+      const applyAssistantUpdate = (updater: (message: ChatMessage) => ChatMessage) => {
+        setMessages((previous) =>
+          previous.map((message) => (message.id === assistantMessage.id ? updater(message) : message)),
+        );
+      };
+
       const controller = new AbortController();
       abortControllerRef.current = controller;
       setIsStreaming(true);
@@ -1058,11 +1066,13 @@ export default function ChatPage() {
       const streamUrl =
         streamParams.size > 0 ? `${baseStreamPath}?${streamParams.toString()}` : baseStreamPath;
 
+      let aggregatedText = assistantMessage.content;
       let finalAnswer: string | null = null;
       let finalCitations: CitationLink[] | undefined;
       let finalMeta: Record<string, unknown> | null = null;
       let debugPayload: unknown = null;
       let receivedDone = false;
+      let streamCompleted = false;
 
       try {
         const response = await fetch(streamUrl, {
@@ -1127,9 +1137,28 @@ export default function ChatPage() {
         let eventDataLines: string[] = [];
         let shouldStop = false;
 
-        const processChunk = (chunk: Record<string, unknown>) => {
-          if (typeof chunk.delta === 'string') {
-            const delta = chunk.delta as string;
+        const processChunk = (chunk: unknown) => {
+          if (typeof chunk === 'string') {
+            if (!chunk) {
+              return;
+            }
+            aggregatedText += chunk;
+            finalAnswer = aggregatedText;
+            applyAssistantUpdate((message) => ({
+              ...message,
+              content: message.content + chunk,
+            }));
+            return;
+          }
+
+          if (!chunk || typeof chunk !== 'object') {
+            return;
+          }
+
+          const payload = chunk as Record<string, unknown>;
+
+          if (typeof payload.delta === 'string') {
+            const delta = payload.delta as string;
             aggregatedText += delta;
             finalAnswer = aggregatedText;
             applyAssistantUpdate((message) => ({
@@ -1138,8 +1167,8 @@ export default function ChatPage() {
             }));
           }
 
-          if (typeof chunk.answer === 'string') {
-            const answer = chunk.answer as string;
+          if (typeof payload.answer === 'string') {
+            const answer = payload.answer as string;
             finalAnswer = answer;
             aggregatedText = answer;
             applyAssistantUpdate((message) => ({
@@ -1148,15 +1177,15 @@ export default function ChatPage() {
             }));
           }
 
-          if (Array.isArray(chunk.contexts)) {
+          if (Array.isArray(payload.contexts)) {
             finalCitations = buildCitationLinksFromContexts(
-              chunk.contexts as Array<Record<string, unknown>>,
+              payload.contexts as Array<Record<string, unknown>>,
             );
           }
 
-          if (chunk.meta && typeof chunk.meta === 'object') {
-            finalMeta = chunk.meta as Record<string, unknown>;
-            const lang = (chunk.meta as Record<string, unknown>).lang;
+          if (payload.meta && typeof payload.meta === 'object') {
+            finalMeta = payload.meta as Record<string, unknown>;
+            const lang = (payload.meta as Record<string, unknown>).lang;
             if (lang === 'en') {
               setLanguage('en');
             } else if (lang === 'fa') {
@@ -1164,12 +1193,12 @@ export default function ChatPage() {
             }
           }
 
-          if (chunk.debug !== undefined) {
-            debugPayload = chunk.debug;
+          if (payload.debug !== undefined) {
+            debugPayload = payload.debug;
           }
 
-          if (typeof chunk.error === 'string') {
-            const errorText = chunk.error as string;
+          if (typeof payload.error === 'string') {
+            const errorText = payload.error as string;
             finalAnswer = errorText;
             aggregatedText = errorText;
             applyAssistantUpdate((message) => ({
@@ -1188,13 +1217,15 @@ export default function ChatPage() {
           if (payload === '[DONE]') {
             receivedDone = true;
             shouldStop = true;
+            streamCompleted = true;
             return;
           }
           let parsed: Record<string, unknown>;
           try {
             parsed = JSON.parse(payload) as Record<string, unknown>;
           } catch (error) {
-            throw new SSEParseError('Malformed SSE payload');
+            processChunk(payload);
+            return;
           }
           processChunk(parsed);
         };
@@ -1209,7 +1240,10 @@ export default function ChatPage() {
             return;
           }
           if (line.startsWith('data:')) {
-            eventDataLines.push(line.slice(5).trimStart());
+            const value = line.startsWith('data: ')
+              ? line.slice('data: '.length)
+              : line.slice('data:'.length);
+            eventDataLines.push(value);
             return;
           }
           if (allowFallbackData) {
@@ -1234,7 +1268,6 @@ export default function ChatPage() {
               eventDataLines = [];
               return;
             }
-            eventBoundary = buffer.indexOf('\n\n');
           }
 
           if (flush) {
