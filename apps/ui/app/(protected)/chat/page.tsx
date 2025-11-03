@@ -1036,52 +1036,65 @@ export default function ChatPage() {
       abortControllerRef.current = controller;
       setIsStreaming(true);
 
-      const params = new URLSearchParams({
-        session_id: selectedSessionId,
-        stream: 'true',
-      });
-      if (debugEnabled) {
-        params.set('debug', 'true');
-      }
+      const streamUrl = `/sessions/${selectedSessionId}/messages/stream${
+        debugEnabled ? '?debug=true' : ''
+      }`;
+      const applyAssistantUpdate = (updater: (previous: ChatMessage) => ChatMessage) => {
+        setMessages((previous) =>
+          previous.map((message) =>
+            message.id === assistantMessage.id ? updater(message) : message,
+          ),
+        );
+      };
 
       let finalAnswer: string | null = null;
       let finalCitations: CitationLink[] | undefined;
       let finalMeta: Record<string, unknown> | null = null;
       let debugPayload: unknown = null;
+      let aggregatedText = '';
+      let streamCompleted = false;
+
+      const SESSION_NOT_FOUND_ERROR = 'SessionNotFoundError';
+      const STREAM_INCOMPLETE_ERROR = 'StreamIncompleteError';
 
       try {
-        const response = await fetch(`/query?${params.toString()}`, {
+        const response = await fetch(streamUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
             ...csrfHeaders,
           },
           credentials: 'include',
-          body: JSON.stringify({ q: trimmedPrompt }),
+          body: JSON.stringify({
+            content: trimmedPrompt,
+            context: true,
+          }),
           signal: controller.signal,
         });
+
+        if (response.status === 404) {
+          const error = new Error('Session not found');
+          error.name = SESSION_NOT_FOUND_ERROR;
+          throw error;
+        }
 
         const streamBody = response.body as {
           getReader?: () => ReadableStreamDefaultReader<Uint8Array>;
         } | null;
         const reader = streamBody?.getReader?.();
         if (!response.ok || !reader) {
-          throw new Error('Query failed');
+          throw new Error('Stream request failed');
         }
+
         const decoder = new TextDecoder();
         let buffer = '';
-
-        const applyAssistantUpdate = (updater: (previous: ChatMessage) => ChatMessage) => {
-          setMessages((previous) =>
-            previous.map((message) =>
-              message.id === assistantMessage.id ? updater(message) : message,
-            ),
-          );
-        };
 
         const processChunk = (chunk: Record<string, unknown>) => {
           if (typeof chunk.delta === 'string') {
             const delta = chunk.delta as string;
+            aggregatedText += delta;
+            finalAnswer = aggregatedText;
             applyAssistantUpdate((message) => ({
               ...message,
               content: message.content + delta,
@@ -1089,10 +1102,12 @@ export default function ChatPage() {
           }
 
           if (typeof chunk.answer === 'string') {
-            finalAnswer = chunk.answer as string;
+            const answer = chunk.answer as string;
+            finalAnswer = answer;
+            aggregatedText = answer;
             applyAssistantUpdate((message) => ({
               ...message,
-              content: chunk.answer as string,
+              content: answer,
             }));
           }
 
@@ -1117,57 +1132,110 @@ export default function ChatPage() {
           }
 
           if (typeof chunk.error === 'string') {
+            const errorText = chunk.error as string;
+            finalAnswer = errorText;
+            aggregatedText = errorText;
             applyAssistantUpdate((message) => ({
               ...message,
-              content: chunk.error as string,
+              content: errorText,
             }));
-            finalAnswer = chunk.error as string;
           }
         };
 
-        while (true) {
+        const processDataPayload = (payload: string) => {
+          if (!payload) {
+            return;
+          }
+          if (payload === '[DONE]') {
+            streamCompleted = true;
+            return;
+          }
+
+          let parsed: Record<string, unknown> | null = null;
+          try {
+            parsed = JSON.parse(payload) as Record<string, unknown>;
+          } catch (err) {
+            parsed = null;
+          }
+
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            processChunk(parsed);
+            return;
+          }
+
+          aggregatedText += payload;
+          finalAnswer = aggregatedText;
+          applyAssistantUpdate((message) => ({
+            ...message,
+            content: message.content + payload,
+          }));
+        };
+
+        const processEventBlock = (block: string) => {
+          if (!block) {
+            return;
+          }
+          const dataLines: string[] = [];
+          for (const rawLine of block.split('\n')) {
+            const trimmedLine = rawLine.trim();
+            if (!trimmedLine || trimmedLine.startsWith(':')) {
+              continue;
+            }
+            if (trimmedLine.startsWith('data:')) {
+              dataLines.push(trimmedLine.slice(5).trimStart());
+            }
+          }
+          if (!dataLines.length) {
+            return;
+          }
+          processDataPayload(dataLines.join('\n'));
+        };
+
+        while (!streamCompleted) {
           const { done, value } = await reader.read();
           if (done) {
+            buffer += decoder.decode();
             break;
           }
           buffer += decoder.decode(value, { stream: true });
 
-          let newlineIndex = buffer.indexOf('\n');
-          while (newlineIndex !== -1) {
-            const line = buffer.slice(0, newlineIndex).trim();
-            buffer = buffer.slice(newlineIndex + 1);
-            if (line) {
-              try {
-                const parsed = JSON.parse(line) as Record<string, unknown>;
-                processChunk(parsed);
-              } catch (err) {
-                console.warn('Failed to parse stream chunk', err);
-              }
+          let eventBoundary = buffer.indexOf('\n\n');
+          while (eventBoundary !== -1) {
+            const eventBlock = buffer.slice(0, eventBoundary);
+            buffer = buffer.slice(eventBoundary + 2);
+            processEventBlock(eventBlock);
+            if (streamCompleted) {
+              break;
             }
-            newlineIndex = buffer.indexOf('\n');
+            eventBoundary = buffer.indexOf('\n\n');
           }
         }
 
-        if (buffer.trim().length > 0) {
-          try {
-            const parsed = JSON.parse(buffer) as Record<string, unknown>;
-            processChunk(parsed);
-          } catch (err) {
-            console.warn('Failed to parse trailing stream chunk', err);
-          }
+        if (!streamCompleted && buffer.trim().length > 0) {
+          processEventBlock(buffer);
+          buffer = '';
         }
 
-        applyAssistantUpdate((message) => ({
-          ...message,
-          content: finalAnswer ?? message.content,
-          citations: finalCitations,
-          meta: finalMeta,
-          debug: debugPayload,
-        }));
+        if (!streamCompleted) {
+          const error = new Error('Stream ended unexpectedly');
+          error.name = STREAM_INCOMPLETE_ERROR;
+          throw error;
+        }
+
+        applyAssistantUpdate((message) => {
+          const resolvedContent = (finalAnswer ?? aggregatedText) || message.content;
+          return {
+            ...message,
+            content: resolvedContent,
+            citations: finalCitations,
+            meta: finalMeta,
+            debug: debugPayload,
+          };
+        });
 
         const assistantToPersist: ChatMessage = {
           ...assistantMessage,
-          content: finalAnswer ?? assistantMessage.content,
+          content: (finalAnswer ?? aggregatedText) || assistantMessage.content,
           citations: finalCitations,
           meta: finalMeta,
         };
@@ -1176,17 +1244,31 @@ export default function ChatPage() {
         await loadSessions({ query: sessionSearch });
       } catch (err) {
         console.warn('Chat request failed', err);
-        setError('Chat failed. Please try again.');
-        setMessages((previous) =>
-          previous.map((message) =>
-            message.id === assistantMessage.id
-              ? {
-                  ...message,
-                  content: 'Chat failed. Please try again.',
-                }
-              : message,
-          ),
-        );
+        const errorObject = err as Error | DOMException | undefined;
+        if (errorObject && 'name' in errorObject && errorObject.name === 'AbortError') {
+          return;
+        }
+
+        let errorMessage = 'Chat failed. Please try again.';
+        if (errorObject && 'name' in errorObject) {
+          if (errorObject.name === SESSION_NOT_FOUND_ERROR) {
+            errorMessage = 'The selected session could not be found. Please refresh sessions and try again.';
+          } else if (errorObject.name === STREAM_INCOMPLETE_ERROR) {
+            errorMessage = 'The response stream ended unexpectedly. Please try again.';
+          }
+        }
+
+        setError(errorMessage);
+        applyAssistantUpdate((message) => {
+          const prefix = message.content.trim().length > 0 ? `${message.content}\n\n` : '';
+          return {
+            ...message,
+            content: `${prefix}${errorMessage}`,
+            citations: undefined,
+            meta: undefined,
+            debug: undefined,
+          };
+        });
       } finally {
         abortControllerRef.current = null;
         setIsStreaming(false);

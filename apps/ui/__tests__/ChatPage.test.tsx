@@ -13,7 +13,7 @@ if (typeof globalThis.TextDecoder === 'undefined') {
 }
 
 type StreamController = {
-  push(chunk: Record<string, unknown>): void;
+  push(chunk: Record<string, unknown> | string): void;
   close(): void;
   response: Response;
 };
@@ -53,16 +53,19 @@ function createStreamController(): StreamController {
   };
 
   return {
-    push(chunk: Record<string, unknown>) {
-      queue.push(encoder.encode(`${JSON.stringify(chunk)}\n`));
+    push(chunk: Record<string, unknown> | string) {
+      const payload = typeof chunk === 'string' ? chunk : JSON.stringify(chunk);
+      queue.push(encoder.encode(`data: ${payload}\n\n`));
       flush();
     },
     close() {
+      queue.push(encoder.encode('data: [DONE]\n\n'));
       closed = true;
       flush();
     },
     response: {
       ok: true,
+      status: 200,
       body,
     } as unknown as Response,
   };
@@ -112,6 +115,10 @@ describe('ChatPage', () => {
 
       if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'GET') {
         return Promise.resolve(createJsonResponse({ messages: [] }));
+      }
+
+      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages/stream`) && method === 'POST') {
+        return Promise.resolve(stream.response);
       }
 
       if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'POST') {
@@ -186,10 +193,6 @@ describe('ChatPage', () => {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
 
-      if (url.startsWith('/query')) {
-        return Promise.resolve(stream.response);
-      }
-
       return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
     });
 
@@ -208,6 +211,22 @@ describe('ChatPage', () => {
       await user.click(sendButton);
     });
 
+    const streamCall = fetchMock.mock.calls.find(([requestedUrl]) =>
+      typeof requestedUrl === 'string'
+        ? requestedUrl.includes(`/sessions/${MOCK_SESSION_ID}/messages/stream`)
+        : false,
+    );
+
+    expect(streamCall).toBeDefined();
+    if (streamCall) {
+      const [, init] = streamCall;
+      expect(init).toMatchObject({
+        method: 'POST',
+        body: JSON.stringify({ content: 'Where is the library?', context: true }),
+      });
+      expect(init?.headers).toMatchObject({ Accept: 'text/event-stream' });
+    }
+
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(`/sessions/${MOCK_SESSION_ID}/messages`),
       expect.objectContaining({ method: 'POST' }),
@@ -216,7 +235,7 @@ describe('ChatPage', () => {
     const assistMessages = () => screen.getAllByTestId('chat-message-assistant');
 
     await act(async () => {
-      stream.push({ delta: 'Partial answer ' });
+      stream.push('Partial answer ');
     });
 
     await waitFor(() => {
