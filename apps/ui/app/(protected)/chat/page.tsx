@@ -115,6 +115,20 @@ function createMessageId() {
   return `msg-${Math.random().toString(36).slice(2)}`;
 }
 
+class SessionNotFoundError extends Error {
+  constructor(message = 'Session not found') {
+    super(message);
+    this.name = 'SessionNotFoundError';
+  }
+}
+
+class SSEParseError extends Error {
+  constructor(message = 'Malformed SSE stream') {
+    super(message);
+    this.name = 'SSEParseError';
+  }
+}
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^[0-9]+$/;
@@ -1036,26 +1050,19 @@ export default function ChatPage() {
       abortControllerRef.current = controller;
       setIsStreaming(true);
 
-      const streamUrl = `/sessions/${selectedSessionId}/messages/stream${
-        debugEnabled ? '?debug=true' : ''
-      }`;
-      const applyAssistantUpdate = (updater: (previous: ChatMessage) => ChatMessage) => {
-        setMessages((previous) =>
-          previous.map((message) =>
-            message.id === assistantMessage.id ? updater(message) : message,
-          ),
-        );
-      };
+      const baseStreamPath = `/sessions/${encodeURIComponent(selectedSessionId)}/messages/stream`;
+      const streamParams = new URLSearchParams();
+      if (debugEnabled) {
+        streamParams.set('debug', 'true');
+      }
+      const streamUrl =
+        streamParams.size > 0 ? `${baseStreamPath}?${streamParams.toString()}` : baseStreamPath;
 
       let finalAnswer: string | null = null;
       let finalCitations: CitationLink[] | undefined;
       let finalMeta: Record<string, unknown> | null = null;
       let debugPayload: unknown = null;
-      let aggregatedText = '';
-      let streamCompleted = false;
-
-      const SESSION_NOT_FOUND_ERROR = 'SessionNotFoundError';
-      const STREAM_INCOMPLETE_ERROR = 'StreamIncompleteError';
+      let receivedDone = false;
 
       try {
         const response = await fetch(streamUrl, {
@@ -1066,29 +1073,59 @@ export default function ChatPage() {
             ...csrfHeaders,
           },
           credentials: 'include',
-          body: JSON.stringify({
-            content: trimmedPrompt,
-            context: true,
-          }),
+          body: JSON.stringify({ content: trimmedPrompt, context: true }),
           signal: controller.signal,
         });
 
         if (response.status === 404) {
-          const error = new Error('Session not found');
-          error.name = SESSION_NOT_FOUND_ERROR;
-          throw error;
+          throw new SessionNotFoundError('Session not found');
         }
 
-        const streamBody = response.body as {
-          getReader?: () => ReadableStreamDefaultReader<Uint8Array>;
-        } | null;
-        const reader = streamBody?.getReader?.();
-        if (!response.ok || !reader) {
-          throw new Error('Stream request failed');
+        if (!response.ok) {
+          throw new Error('Query failed');
         }
 
-        const decoder = new TextDecoder();
+        const streamBody = response.body as ReadableStream<Uint8Array> | null;
+
+        type ReaderType =
+          | ReadableStreamDefaultReader<string>
+          | ReadableStreamDefaultReader<Uint8Array>
+          | null;
+
+        let reader: ReaderType = null;
+        let usingTextDecoderStream = false;
+
+        if (streamBody) {
+          const canUseTextDecoderStream =
+            typeof TextDecoderStream !== 'undefined' &&
+            'pipeThrough' in streamBody &&
+            typeof streamBody.pipeThrough === 'function';
+
+          if (canUseTextDecoderStream) {
+            try {
+              const textStream = streamBody.pipeThrough(new TextDecoderStream());
+              if (textStream && typeof textStream.getReader === 'function') {
+                reader = textStream.getReader();
+                usingTextDecoderStream = true;
+              }
+            } catch {
+              // Fallback handled below when TextDecoderStream is unavailable.
+            }
+          }
+
+          if (!reader && typeof streamBody.getReader === 'function') {
+            reader = streamBody.getReader();
+          }
+        }
+
+        if (!reader) {
+          throw new Error('Query failed');
+        }
+
+        const decoder = usingTextDecoderStream ? null : new TextDecoder();
         let buffer = '';
+        let eventDataLines: string[] = [];
+        let shouldStop = false;
 
         const processChunk = (chunk: Record<string, unknown>) => {
           if (typeof chunk.delta === 'string') {
@@ -1142,78 +1179,101 @@ export default function ChatPage() {
           }
         };
 
-        const processDataPayload = (payload: string) => {
-          if (!payload) {
+        const finalizeEvent = () => {
+          if (!eventDataLines.length) {
             return;
           }
+          const payload = eventDataLines.join('\n');
+          eventDataLines = [];
           if (payload === '[DONE]') {
-            streamCompleted = true;
+            receivedDone = true;
+            shouldStop = true;
             return;
           }
-
-          let parsed: Record<string, unknown> | null = null;
+          let parsed: Record<string, unknown>;
           try {
             parsed = JSON.parse(payload) as Record<string, unknown>;
-          } catch (err) {
-            parsed = null;
+          } catch (error) {
+            throw new SSEParseError('Malformed SSE payload');
           }
-
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            processChunk(parsed);
-            return;
-          }
-
-          aggregatedText += payload;
-          finalAnswer = aggregatedText;
-          applyAssistantUpdate((message) => ({
-            ...message,
-            content: message.content + payload,
-          }));
+          processChunk(parsed);
         };
 
-        const processEventBlock = (block: string) => {
-          if (!block) {
+        const handleLine = (rawLine: string, allowFallbackData = false) => {
+          const line = rawLine.replace(/\r$/, '');
+          if (!line) {
+            finalizeEvent();
             return;
           }
-          const dataLines: string[] = [];
-          for (const rawLine of block.split('\n')) {
-            const trimmedLine = rawLine.trim();
-            if (!trimmedLine || trimmedLine.startsWith(':')) {
-              continue;
-            }
-            if (trimmedLine.startsWith('data:')) {
-              dataLines.push(trimmedLine.slice(5).trimStart());
-            }
-          }
-          if (!dataLines.length) {
+          if (line.startsWith(':')) {
             return;
           }
-          processDataPayload(dataLines.join('\n'));
+          if (line.startsWith('data:')) {
+            eventDataLines.push(line.slice(5).trimStart());
+            return;
+          }
+          if (allowFallbackData) {
+            eventDataLines.push(line);
+            return;
+          }
+          throw new SSEParseError('Malformed SSE event');
         };
 
-        while (!streamCompleted) {
-          const { done, value } = await reader.read();
-          if (done) {
-            buffer += decoder.decode();
-            break;
+        const appendChunk = (text: string, flush = false) => {
+          if (text) {
+            buffer += text;
           }
-          buffer += decoder.decode(value, { stream: true });
 
-          let eventBoundary = buffer.indexOf('\n\n');
-          while (eventBoundary !== -1) {
-            const eventBlock = buffer.slice(0, eventBoundary);
-            buffer = buffer.slice(eventBoundary + 2);
-            processEventBlock(eventBlock);
-            if (streamCompleted) {
-              break;
+          let newlineIndex = buffer.indexOf('\n');
+          while (newlineIndex !== -1) {
+            const line = buffer.slice(0, newlineIndex);
+            buffer = buffer.slice(newlineIndex + 1);
+            handleLine(line);
+            if (shouldStop) {
+              buffer = '';
+              eventDataLines = [];
+              return;
             }
             eventBoundary = buffer.indexOf('\n\n');
           }
+
+          if (flush) {
+            if (buffer.length > 0) {
+              handleLine(buffer, true);
+              buffer = '';
+            }
+            finalizeEvent();
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            if (!usingTextDecoderStream && decoder) {
+              const remainder = decoder.decode();
+              if (remainder) {
+                appendChunk(remainder);
+              }
+            }
+            appendChunk('', true);
+            break;
+          }
+
+          const chunkText = usingTextDecoderStream
+            ? (typeof value === 'string' ? value : String(value ?? ''))
+            : decoder!.decode(value as Uint8Array, { stream: true });
+
+          if (chunkText) {
+            appendChunk(chunkText);
+          }
+
+          if (shouldStop) {
+            break;
+          }
         }
 
-        if (!streamCompleted && buffer.trim().length > 0) {
-          processEventBlock(buffer);
-          buffer = '';
+        if (!receivedDone) {
+          throw new SSEParseError('Stream ended without completion signal');
         }
 
         if (!streamCompleted) {
@@ -1244,31 +1304,31 @@ export default function ChatPage() {
         await loadSessions({ query: sessionSearch });
       } catch (err) {
         console.warn('Chat request failed', err);
-        const errorObject = err as Error | DOMException | undefined;
-        if (errorObject && 'name' in errorObject && errorObject.name === 'AbortError') {
+        if (err instanceof DOMException && err.name === 'AbortError') {
           return;
         }
 
-        let errorMessage = 'Chat failed. Please try again.';
-        if (errorObject && 'name' in errorObject) {
-          if (errorObject.name === SESSION_NOT_FOUND_ERROR) {
-            errorMessage = 'The selected session could not be found. Please refresh sessions and try again.';
-          } else if (errorObject.name === STREAM_INCOMPLETE_ERROR) {
-            errorMessage = 'The response stream ended unexpectedly. Please try again.';
-          }
+        let errorMessage = 'Streaming response failed. Please try again.';
+        if (err instanceof SessionNotFoundError) {
+          errorMessage = 'Selected session could not be found. Please choose or create another session.';
+          await loadSessions({ query: sessionSearch });
+        } else if (err instanceof SSEParseError) {
+          errorMessage = 'Received an invalid response from the server. Please try again.';
+        } else if (err instanceof TypeError) {
+          errorMessage = 'Network error. Please check your connection and try again.';
         }
 
         setError(errorMessage);
-        applyAssistantUpdate((message) => {
-          const prefix = message.content.trim().length > 0 ? `${message.content}\n\n` : '';
-          return {
-            ...message,
-            content: `${prefix}${errorMessage}`,
-            citations: undefined,
-            meta: undefined,
-            debug: undefined,
-          };
-        });
+        setMessages((previous) =>
+          previous.map((message) =>
+            message.id === assistantMessage.id
+              ? {
+                  ...message,
+                  content: errorMessage,
+                }
+              : message,
+          ),
+        );
       } finally {
         abortControllerRef.current = null;
         setIsStreaming(false);

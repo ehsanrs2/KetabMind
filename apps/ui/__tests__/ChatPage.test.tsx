@@ -13,7 +13,8 @@ if (typeof globalThis.TextDecoder === 'undefined') {
 }
 
 type StreamController = {
-  push(chunk: Record<string, unknown> | string): void;
+  pushJson(chunk: Record<string, unknown>): void;
+  pushDone(): void;
   close(): void;
   response: Response;
 };
@@ -53,9 +54,12 @@ function createStreamController(): StreamController {
   };
 
   return {
-    push(chunk: Record<string, unknown> | string) {
-      const payload = typeof chunk === 'string' ? chunk : JSON.stringify(chunk);
-      queue.push(encoder.encode(`data: ${payload}\n\n`));
+    pushJson(chunk: Record<string, unknown>) {
+      queue.push(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+      flush();
+    },
+    pushDone() {
+      queue.push(encoder.encode('data: [DONE]\n\n'));
       flush();
     },
     close() {
@@ -91,6 +95,7 @@ describe('ChatPage', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const stream = createStreamController();
     const postBodies: Array<string | undefined> = [];
+    const streamBodies: Array<unknown> = [];
     let assistantMessageIdCounter = 0;
     let bookmarkIdCounter = 0;
 
@@ -113,15 +118,13 @@ describe('ChatPage', () => {
         return Promise.resolve(createJsonResponse({ bookmarks: [] }));
       }
 
-      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'GET') {
+      const messagesBaseUrl = `/sessions/${MOCK_SESSION_ID}/messages`;
+
+      if (url === messagesBaseUrl && method === 'GET') {
         return Promise.resolve(createJsonResponse({ messages: [] }));
       }
 
-      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages/stream`) && method === 'POST') {
-        return Promise.resolve(stream.response);
-      }
-
-      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'POST') {
+      if (url === messagesBaseUrl && method === 'POST') {
         postBodies.push(typeof init?.body === 'string' ? init?.body : undefined);
         const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
         const role = payload?.role;
@@ -185,6 +188,14 @@ describe('ChatPage', () => {
         );
       }
 
+      const expectedStreamUrl = `/sessions/${MOCK_SESSION_ID}/messages/stream`;
+
+      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages/stream`) && method === 'POST') {
+        const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+        streamBodies.push(body);
+        return Promise.resolve(stream.response);
+      }
+
       if (url.startsWith('/sessions') && method === 'POST') {
         return Promise.resolve(createJsonResponse({ id: NEW_SESSION_ID, title: 'New Session' }));
       }
@@ -232,10 +243,14 @@ describe('ChatPage', () => {
       expect.objectContaining({ method: 'POST' }),
     );
 
+    await waitFor(() => {
+      expect(streamBodies.length).toBeGreaterThan(0);
+    });
+
     const assistMessages = () => screen.getAllByTestId('chat-message-assistant');
 
     await act(async () => {
-      stream.push('Partial answer ');
+      stream.pushJson({ delta: 'Partial answer ' });
     });
 
     await waitFor(() => {
@@ -243,12 +258,18 @@ describe('ChatPage', () => {
       expect(assistant).toHaveTextContent('Partial answer');
     });
 
+    expect(streamBodies.at(0)).toMatchObject({
+      content: 'Where is the library?',
+      context: true,
+    });
+
     await act(async () => {
-      stream.push({
+      stream.pushJson({
         answer: 'Partial answer with citation',
         contexts: [{ book_id: 'book1', page_start: 12, page_end: 14 }],
         meta: { coverage: 0.75, confidence: 0.64 },
       });
+      stream.pushDone();
       stream.close();
     });
 
