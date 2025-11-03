@@ -1069,6 +1069,7 @@ export default function ChatPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
             ...csrfHeaders,
           },
           credentials: 'include',
@@ -1126,17 +1127,11 @@ export default function ChatPage() {
         let eventDataLines: string[] = [];
         let shouldStop = false;
 
-        const applyAssistantUpdate = (updater: (previous: ChatMessage) => ChatMessage) => {
-          setMessages((previous) =>
-            previous.map((message) =>
-              message.id === assistantMessage.id ? updater(message) : message,
-            ),
-          );
-        };
-
         const processChunk = (chunk: Record<string, unknown>) => {
           if (typeof chunk.delta === 'string') {
             const delta = chunk.delta as string;
+            aggregatedText += delta;
+            finalAnswer = aggregatedText;
             applyAssistantUpdate((message) => ({
               ...message,
               content: message.content + delta,
@@ -1144,10 +1139,12 @@ export default function ChatPage() {
           }
 
           if (typeof chunk.answer === 'string') {
-            finalAnswer = chunk.answer as string;
+            const answer = chunk.answer as string;
+            finalAnswer = answer;
+            aggregatedText = answer;
             applyAssistantUpdate((message) => ({
               ...message,
-              content: chunk.answer as string,
+              content: answer,
             }));
           }
 
@@ -1172,11 +1169,13 @@ export default function ChatPage() {
           }
 
           if (typeof chunk.error === 'string') {
+            const errorText = chunk.error as string;
+            finalAnswer = errorText;
+            aggregatedText = errorText;
             applyAssistantUpdate((message) => ({
               ...message,
-              content: chunk.error as string,
+              content: errorText,
             }));
-            finalAnswer = chunk.error as string;
           }
         };
 
@@ -1235,7 +1234,7 @@ export default function ChatPage() {
               eventDataLines = [];
               return;
             }
-            newlineIndex = buffer.indexOf('\n');
+            eventBoundary = buffer.indexOf('\n\n');
           }
 
           if (flush) {
@@ -1277,17 +1276,26 @@ export default function ChatPage() {
           throw new SSEParseError('Stream ended without completion signal');
         }
 
-        applyAssistantUpdate((message) => ({
-          ...message,
-          content: finalAnswer ?? message.content,
-          citations: finalCitations,
-          meta: finalMeta,
-          debug: debugPayload,
-        }));
+        if (!streamCompleted) {
+          const error = new Error('Stream ended unexpectedly');
+          error.name = STREAM_INCOMPLETE_ERROR;
+          throw error;
+        }
+
+        applyAssistantUpdate((message) => {
+          const resolvedContent = (finalAnswer ?? aggregatedText) || message.content;
+          return {
+            ...message,
+            content: resolvedContent,
+            citations: finalCitations,
+            meta: finalMeta,
+            debug: debugPayload,
+          };
+        });
 
         const assistantToPersist: ChatMessage = {
           ...assistantMessage,
-          content: finalAnswer ?? assistantMessage.content,
+          content: (finalAnswer ?? aggregatedText) || assistantMessage.content,
           citations: finalCitations,
           meta: finalMeta,
         };

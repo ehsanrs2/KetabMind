@@ -63,11 +63,13 @@ function createStreamController(): StreamController {
       flush();
     },
     close() {
+      queue.push(encoder.encode('data: [DONE]\n\n'));
       closed = true;
       flush();
     },
     response: {
       ok: true,
+      status: 200,
       body,
     } as unknown as Response,
   };
@@ -219,6 +221,22 @@ describe('ChatPage', () => {
     await act(async () => {
       await user.click(sendButton);
     });
+
+    const streamCall = fetchMock.mock.calls.find(([requestedUrl]) =>
+      typeof requestedUrl === 'string'
+        ? requestedUrl.includes(`/sessions/${MOCK_SESSION_ID}/messages/stream`)
+        : false,
+    );
+
+    expect(streamCall).toBeDefined();
+    if (streamCall) {
+      const [, init] = streamCall;
+      expect(init).toMatchObject({
+        method: 'POST',
+        body: JSON.stringify({ content: 'Where is the library?', context: true }),
+      });
+      expect(init?.headers).toMatchObject({ Accept: 'text/event-stream' });
+    }
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(`/sessions/${MOCK_SESSION_ID}/messages`),
