@@ -153,6 +153,8 @@ class Settings(BaseSettingsProto):  # type: ignore[misc]
     llm_device: str | None = None
     llm_load_in_4bit: bool = True
     ollama_host: str = "http://localhost:11434"
+    local_llm_model: str = "llama3"
+    local_llm_use_ollama: bool = True
 
     chunk_size: int = 800
     chunk_overlap: int = 200

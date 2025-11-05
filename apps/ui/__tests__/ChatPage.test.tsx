@@ -90,6 +90,22 @@ describe('ChatPage', () => {
 
   const MOCK_SESSION_ID = '11111111-1111-4111-8111-111111111111';
   const NEW_SESSION_ID = '22222222-2222-4222-8222-222222222222';
+  const EXPECTED_STREAM_MODEL =
+    ((candidates: Array<string | undefined>) => {
+      for (const candidate of candidates) {
+        if (typeof candidate === 'string') {
+          const normalized = candidate.trim().toLowerCase();
+          if (normalized === 'ollama' || normalized === 'openai') {
+            return normalized;
+          }
+        }
+      }
+      return 'ollama';
+    })([
+      process.env.NEXT_PUBLIC_STREAM_MODEL,
+      process.env.NEXT_PUBLIC_LLM_MODEL,
+      process.env.NEXT_PUBLIC_LLM_BACKEND,
+    ]);
 
   it('streams assistant tokens and renders citations as links', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -233,7 +249,11 @@ describe('ChatPage', () => {
       const [, init] = streamCall;
       expect(init).toMatchObject({
         method: 'POST',
-        body: JSON.stringify({ content: 'Where is the library?', context: true }),
+        body: JSON.stringify({
+          content: 'Where is the library?',
+          context: true,
+          model: EXPECTED_STREAM_MODEL,
+        }),
       });
       expect(init?.headers).toMatchObject({ Accept: 'text/event-stream' });
     }
@@ -261,6 +281,7 @@ describe('ChatPage', () => {
     expect(streamBodies.at(0)).toMatchObject({
       content: 'Where is the library?',
       context: true,
+      model: EXPECTED_STREAM_MODEL,
     });
 
     await act(async () => {

@@ -22,13 +22,60 @@ import torch
 from requests import RequestException
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
+try:
+    from core import config as _core_config
+except Exception:  # pragma: no cover - config import is best-effort
+    _core_config = None
+
 LOGGER = logging.getLogger(__name__)
 
 
-_DEFAULT_OLLAMA_MODEL = os.environ.get("LOCAL_LLM_MODEL", "llama3")
+def _default_ollama_model() -> str:
+    env_value = os.environ.get("LOCAL_LLM_MODEL")
+    if env_value:
+        return env_value
+    if _core_config is not None:
+        try:
+            settings = _core_config.get_settings()
+            configured = getattr(settings, "local_llm_model", None)
+            if configured:
+                return configured
+        except Exception:  # pragma: no cover - defensive fallback
+            LOGGER.debug("Falling back to default Ollama model", exc_info=True)
+    return "llama3"
+
+
+_DEFAULT_OLLAMA_MODEL = _default_ollama_model()
 _DEFAULT_HF_MODEL = os.environ.get("LOCAL_LLM_HF_MODEL", "distilgpt2")
 _OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 _PIPELINE_CACHE: dict[str, object] = {}
+
+
+def _resolve_model_name(model: str | None) -> str:
+    """Return a valid Ollama model name from user-provided input."""
+
+    candidate = (model or "").strip()
+    if not candidate or candidate.lower() in {"ollama", "local", "default", "auto"}:
+        return _DEFAULT_OLLAMA_MODEL
+    return candidate
+
+
+def _should_use_ollama() -> bool:
+    """Return whether Ollama should be attempted before transformers."""
+
+    env_value = os.environ.get("LOCAL_LLM_USE_OLLAMA")
+    if env_value is not None:
+        lowered = env_value.strip().lower()
+        return lowered in {"1", "true", "yes", "on"}
+
+    if _core_config is not None:
+        try:
+            settings = _core_config.get_settings()
+            return bool(getattr(settings, "local_llm_use_ollama", True))
+        except Exception:  # pragma: no cover - defensive fallback
+            LOGGER.debug("Falling back to default Ollama usage flag", exc_info=True)
+
+    return True
 
 
 @dataclass
@@ -40,7 +87,7 @@ class _OllamaConfig:
 
 def _ollama_config(model: str | None) -> _OllamaConfig:
     return _OllamaConfig(
-        model=model or _DEFAULT_OLLAMA_MODEL,
+        model=_resolve_model_name(model),
         url=f"{_OLLAMA_URL.rstrip('/')}/api/generate",
         timeout=float(os.environ.get("OLLAMA_TIMEOUT", 30)),
     )
@@ -77,6 +124,7 @@ def _ensure_citations(text: str) -> str:
 def _ollama_generate(prompt: str, config: _OllamaConfig) -> str | None:
     """Try to generate a response using an Ollama HTTP endpoint."""
 
+    LOGGER.info("Ollama request using model '%s' at '%s'", config.model, config.url)
     try:
         response = requests.post(
             config.url,
@@ -89,7 +137,12 @@ def _ollama_generate(prompt: str, config: _OllamaConfig) -> str | None:
         return None
 
     if response.status_code != 200:
-        LOGGER.info("Ollama returned status %s", response.status_code)
+        truncated = response.text[:200] if response.text else ""
+        LOGGER.info(
+            "Ollama returned status %s: %s",
+            response.status_code,
+            truncated,
+        )
         return None
 
     chunks: Iterable[bytes] = response.iter_lines(decode_unicode=False)
@@ -150,12 +203,20 @@ def _get_hf_pipeline(model_name: str):
         )
         model = AutoModelForCausalLM.from_pretrained(model_name)
 
-    device = 0 if torch.cuda.is_available() else -1
+    uses_accelerate = any(
+        key in model_kwargs and model_kwargs[key]
+        for key in ("load_in_4bit", "load_in_8bit", "device_map")
+    )
+    pipeline_kwargs: dict[str, object] = {
+        "model": model,
+        "tokenizer": tokenizer,
+    }
+    if not uses_accelerate:
+        pipeline_kwargs["device"] = 0 if torch.cuda.is_available() else -1
+
     text_gen = pipeline(
         "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        device=device,
+        **pipeline_kwargs,
     )
 
     _PIPELINE_CACHE[model_name] = text_gen
@@ -191,17 +252,24 @@ def generate(prompt: str, model: str | None = None) -> str:
         raise ValueError("Prompt must be a non-empty string")
 
     trimmed_prompt = _trim_prompt(prompt)
-    config = _ollama_config(model)
-
-    LOGGER.debug("Attempting generation via Ollama model '%s'", config.model)
-    ollama_result = _ollama_generate(trimmed_prompt, config)
-    if ollama_result:
-        LOGGER.debug("Ollama generation succeeded")
-        return _ensure_citations(ollama_result)
+    if _should_use_ollama():
+        config = _ollama_config(model)
+        LOGGER.debug("Attempting generation via Ollama model '%s'", config.model)
+        ollama_result = _ollama_generate(trimmed_prompt, config)
+        if ollama_result:
+            LOGGER.debug("Ollama generation succeeded")
+            return _ensure_citations(ollama_result)
+    else:
+        LOGGER.info("Skipping Ollama attempt due to configuration")
 
     LOGGER.info("Falling back to HuggingFace model for local generation")
-    hf_model = os.environ.get("LOCAL_LLM_HF_MODEL", model or _DEFAULT_HF_MODEL)
-    hf_result = _hf_generate(trimmed_prompt, hf_model)
+    hf_model = os.environ.get("LOCAL_LLM_HF_MODEL") or _DEFAULT_HF_MODEL
+    try:
+        hf_result = _hf_generate(trimmed_prompt, hf_model)
+    except OSError as exc:
+        raise RuntimeError(
+            f"Local LLM fallback failed: HuggingFace model '{hf_model}' could not be loaded"
+        ) from exc
     if hf_result:
         return _ensure_citations(hf_result)
 

@@ -108,6 +108,35 @@ def test_generate_falls_back_to_hf(monkeypatch):
     assert "load_in_4bit" in kwargs
 
 
+def test_generate_skips_ollama_when_disabled(monkeypatch):
+    monkeypatch.setenv("LOCAL_LLM_USE_OLLAMA", "false")
+    monkeypatch.setattr(local_llm, "_PIPELINE_CACHE", {})
+
+    def _unexpected_post(*args, **kwargs):
+        raise AssertionError("Ollama should be skipped when disabled")
+
+    monkeypatch.setattr(local_llm.requests, "post", _unexpected_post)
+
+    class DummyPipeline:
+        def __call__(self, prompt, **kwargs):
+            return [{"generated_text": "answer"}]
+
+    monkeypatch.setattr(local_llm, "pipeline", lambda *args, **kwargs: DummyPipeline())
+    monkeypatch.setattr(local_llm, "AutoTokenizer", SimpleNamespace(from_pretrained=lambda *a, **k: None))
+    monkeypatch.setattr(local_llm, "AutoModelForCausalLM", SimpleNamespace(from_pretrained=lambda *a, **k: None))
+
+    result = local_llm.generate("prompt")
+    assert "answer" in result
+
+
 def test_generate_raises_on_empty_prompt():
     with pytest.raises(ValueError):
         local_llm.generate(" ")
+
+
+def test_resolve_model_name_alias(monkeypatch):
+    monkeypatch.setattr(local_llm, "_DEFAULT_OLLAMA_MODEL", "aya:latest", raising=False)
+    config = local_llm._ollama_config("ollama")
+    assert config.model == "aya:latest"
+    config_none = local_llm._ollama_config(None)
+    assert config_none.model == "aya:latest"

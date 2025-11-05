@@ -1263,7 +1263,17 @@ async def stream_session_message(
             if not piece:
                 continue
             collected.append(piece)
-            yield f"data: {piece}\n\n"
+            lines = piece.splitlines()
+            event_chunks: list[str] = []
+            if lines:
+                for line in lines:
+                    event_chunks.append(f"data: {line}\n")
+                if piece.endswith("\n"):
+                    event_chunks.append("data: \n")
+            else:
+                event_chunks.append("data: \n")
+            event_chunks.append("\n")
+            yield "".join(event_chunks)
         final_text = "".join(collected).strip()
         _persist_assistant_message(session_db_id, owner_id, final_text)
         yield "data: [DONE]\n\n"

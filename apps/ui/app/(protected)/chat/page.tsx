@@ -131,6 +131,23 @@ class SSEParseError extends Error {
 
 const STREAM_INCOMPLETE_ERROR = 'STREAM_INCOMPLETE';
 
+const STREAM_MODEL: 'ollama' | 'openai' = (() => {
+  const candidates = [
+    process.env.NEXT_PUBLIC_STREAM_MODEL,
+    process.env.NEXT_PUBLIC_LLM_MODEL,
+    process.env.NEXT_PUBLIC_LLM_BACKEND,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const normalized = candidate.trim().toLowerCase();
+      if (normalized === 'ollama' || normalized === 'openai') {
+        return normalized as 'ollama' | 'openai';
+      }
+    }
+  }
+  return 'ollama';
+})();
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^[0-9]+$/;
@@ -1083,7 +1100,11 @@ export default function ChatPage() {
             ...csrfHeaders,
           },
           credentials: 'include',
-          body: JSON.stringify({ content: trimmedPrompt, context: true }),
+          body: JSON.stringify({
+            content: trimmedPrompt,
+            context: true,
+            model: STREAM_MODEL,
+          }),
           signal: controller.signal,
         });
 
@@ -1233,6 +1254,10 @@ export default function ChatPage() {
         const handleLine = (rawLine: string, allowFallbackData = false) => {
           const line = rawLine.replace(/\r$/, '');
           if (!line) {
+            finalizeEvent();
+            return;
+          }
+          if (line.trim().length === 0) {
             finalizeEvent();
             return;
           }
@@ -1681,4 +1706,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
