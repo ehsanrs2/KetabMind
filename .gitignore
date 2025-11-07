@@ -11,6 +11,8 @@ qdrant_storage/
 data.json
 node_modules/
 .next/
+.cache/
+.pre-commit-cache/
 
 !data/qdrant/
 !data/qdrant/.gitkeep

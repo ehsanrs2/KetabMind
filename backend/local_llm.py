@@ -30,19 +30,33 @@ except Exception:  # pragma: no cover - config import is best-effort
 LOGGER = logging.getLogger(__name__)
 
 
+_DEFAULT_LOCAL_MODEL = "llama3"
+
+
 def _default_ollama_model() -> str:
     env_value = os.environ.get("LOCAL_LLM_MODEL")
     if env_value:
         return env_value
+
+    llm_env = os.environ.get("LLM_MODEL")
+    if llm_env:
+        return llm_env
+
     if _core_config is not None:
         try:
             settings = _core_config.get_settings()
             configured = getattr(settings, "local_llm_model", None)
+            if configured and configured != _DEFAULT_LOCAL_MODEL:
+                return configured
+            backend = getattr(settings, "llm_backend", "")
+            llm_model = getattr(settings, "llm_model", None)
+            if backend == "ollama" and llm_model:
+                return llm_model
             if configured:
                 return configured
         except Exception:  # pragma: no cover - defensive fallback
             LOGGER.debug("Falling back to default Ollama model", exc_info=True)
-    return "llama3"
+    return _DEFAULT_LOCAL_MODEL
 
 
 _DEFAULT_OLLAMA_MODEL = _default_ollama_model()

@@ -122,8 +122,12 @@ def test_generate_skips_ollama_when_disabled(monkeypatch):
             return [{"generated_text": "answer"}]
 
     monkeypatch.setattr(local_llm, "pipeline", lambda *args, **kwargs: DummyPipeline())
-    monkeypatch.setattr(local_llm, "AutoTokenizer", SimpleNamespace(from_pretrained=lambda *a, **k: None))
-    monkeypatch.setattr(local_llm, "AutoModelForCausalLM", SimpleNamespace(from_pretrained=lambda *a, **k: None))
+    monkeypatch.setattr(
+        local_llm, "AutoTokenizer", SimpleNamespace(from_pretrained=lambda *a, **k: None)
+    )
+    monkeypatch.setattr(
+        local_llm, "AutoModelForCausalLM", SimpleNamespace(from_pretrained=lambda *a, **k: None)
+    )
 
     result = local_llm.generate("prompt")
     assert "answer" in result
@@ -140,3 +144,18 @@ def test_resolve_model_name_alias(monkeypatch):
     assert config.model == "aya:latest"
     config_none = local_llm._ollama_config(None)
     assert config_none.model == "aya:latest"
+
+
+def test_default_ollama_model_falls_back_to_llm_model(monkeypatch):
+    monkeypatch.delenv("LOCAL_LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    dummy_settings = SimpleNamespace(
+        local_llm_model="llama3",
+        llm_model="aya:latest",
+        llm_backend="ollama",
+    )
+    dummy_config = SimpleNamespace(get_settings=lambda: dummy_settings)
+    monkeypatch.setattr(local_llm, "_core_config", dummy_config, raising=False)
+
+    assert local_llm._default_ollama_model() == "aya:latest"

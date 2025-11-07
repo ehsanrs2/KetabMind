@@ -1,0 +1,219 @@
+{"request_id": "d2905022-5673-408c-a202-b95ef5f30a06", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.495, "event": "http.request", "level": "INFO"}
+{"request_id": "e6038dde-c9ac-4e07-9534-ec5af3b92d8b", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.239, "event": "http.request", "level": "INFO"}
+{"request_id": "5ae96d35-c12d-4020-ae24-0e34d87e349d", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 12.703, "event": "http.request", "level": "INFO"}
+{"request_id": "7a727ed9-f216-4c80-aed3-c49cc244d2ba", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 16.313, "event": "http.request", "level": "INFO"}
+{"request_id": "722be8db-0758-40e2-b595-8d57979edd92", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.14, "event": "http.request", "level": "INFO"}
+{"request_id": "e7d6fa44-e9d3-40e2-b071-2abb85648d71", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.076, "event": "http.request", "level": "INFO"}
+{"request_id": "a73e9427-0da5-45af-a1ca-922c339b4c22", "path": "/sessions/22/messages", "method": "GET", "status": 200, "latency_ms": 4.358, "event": "http.request", "level": "INFO"}
+{"request_id": "030d263f-9fde-4ca1-9072-5fe7055bac43", "path": "/books", "method": "GET", "status": 200, "latency_ms": 63.458, "event": "http.request", "level": "INFO"}
+{"request_id": "62bc4b7f-4b5b-4156-a643-526597bb9c23", "path": "/books", "method": "GET", "status": 200, "latency_ms": 0.762, "event": "http.request", "level": "INFO"}
+{"request_id": "49d8a562-27d0-4ac4-b224-a6f53f7f9a8d", "path": "/sessions/22", "method": "DELETE", "status": 204, "latency_ms": 20.512, "event": "http.request", "level": "INFO"}
+{"request_id": "64da297d-7f06-4716-891c-805655d04368", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 4.258, "event": "http.request", "level": "INFO"}
+{"request_id": "07e1c6c3-1251-45e8-b7f8-2baf10d5cbbc", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 1.863, "event": "http.request", "level": "INFO"}
+{"request_id": "6d497f7e-98ef-47fb-8e6f-be9dc1439edf", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 4.13, "event": "http.request", "level": "INFO"}
+{"request_id": "4fa797a9-18c9-4090-ade9-372e4549bfa9", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 2.822, "event": "http.request", "level": "INFO"}
+{"request_id": "4cd45059-433c-487f-8d55-063e2d444265", "path": "/books", "method": "GET", "status": 200, "latency_ms": 4.976, "event": "http.request", "level": "INFO"}
+{"request_id": "d90e38dc-5cde-4080-9204-d119d1b3d7e2", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.221, "event": "http.request", "level": "INFO"}
+{"request_id": "0f2a5dec-4569-4e82-925a-a60fdd6803f3", "path": "/books", "method": "GET", "status": 200, "latency_ms": 0.857, "event": "http.request", "level": "INFO"}
+{"request_id": "6e9b9b2b-2133-40da-9e9d-4901d78a8182", "path": "/sessions", "method": "POST", "status": 200, "latency_ms": 21.117, "event": "http.request", "level": "INFO"}
+{"request_id": "057af8be-7845-4486-9413-1e402a503fcb", "path": "/sessions/23/messages", "method": "GET", "status": 200, "latency_ms": 2.271, "event": "http.request", "level": "INFO"}
+{"request_id": "28aab378-059f-4af8-af52-113aa9714d0f", "path": "/sessions/23", "method": "PATCH", "status": 200, "latency_ms": 12.948, "event": "http.request", "level": "INFO"}
+{"request_id": "d37891f9-2053-42a4-b44b-07d569c6ba75", "path": "/sessions/23/messages", "method": "POST", "status": 200, "latency_ms": 16.076, "event": "http.request", "level": "INFO"}
+Ollama request using model 'llama3' at 'http://localhost:11434/api/generate'
+Ollama returned status 404: {"error":"model 'llama3' not found"}
+Falling back to HuggingFace model for local generation
+We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+{"request_id": "f35e1a58-a2e9-47d9-a471-24d3e3cdab84", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.325, "event": "http.request", "level": "INFO"}
+{"request_id": "66be8d00-7902-4983-8b0e-f67701884e92", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.508, "event": "http.request", "level": "INFO"}
+{"request_id": "fd72b853-3f2b-489c-a016-1b55ffa92b0f", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 4.217, "event": "http.request", "level": "INFO"}
+{"request_id": "3ffe3a7e-10f4-4edc-aaa8-eb1b31967843", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 4.325, "event": "http.request", "level": "INFO"}
+{"request_id": "a19e0ee6-e487-46c1-90fb-d2dd25dd38f0", "path": "/books", "method": "GET", "status": 200, "latency_ms": 5.416, "event": "http.request", "level": "INFO"}
+{"request_id": "78641192-1a70-4531-88ea-971fcd9b0b5e", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.125, "event": "http.request", "level": "INFO"}
+{"request_id": "5f061fb5-94df-47f6-a632-5706f721793d", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 2.033, "event": "http.request", "level": "INFO"}
+{"request_id": "307dccad-a1f0-48b8-a996-6094424b7d39", "path": "/books", "method": "GET", "status": 200, "latency_ms": 3.472, "event": "http.request", "level": "INFO"}
+{"request_id": "6282be64-996d-4c6d-a2e8-c99733c24370", "path": "/sessions/23/messages", "method": "GET", "status": 200, "latency_ms": 2.048, "event": "http.request", "level": "INFO"}
+{"request_id": "39dea8ea-f3bf-404c-9a0d-ce2a22dac914", "path": "/sessions/23/messages", "method": "POST", "status": 200, "latency_ms": 14.963, "event": "http.request", "level": "INFO"}
+Ollama request using model 'llama3' at 'http://localhost:11434/api/generate'
+Ollama returned status 404: {"error":"model 'llama3' not found"}
+Falling back to HuggingFace model for local generation
+{"request_id": "8ae439ca-635d-4849-ae3a-0560563cc15b", "path": "/sessions/23/messages/stream", "method": "POST", "status": 200, "latency_ms": 3108.108, "event": "http.request", "level": "INFO"}
+{"request_id": "fca8974c-fd04-49a8-9393-54acffc04fc4", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.361, "event": "http.request", "level": "INFO"}
+{"request_id": "5d10b752-d75a-4aa2-bcbd-29a33033a006", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.187, "event": "http.request", "level": "INFO"}
+{"request_id": "07a165ae-3396-4fd8-a53d-1385673e9a7c", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.147, "event": "http.request", "level": "INFO"}
+{"request_id": "a0a6d509-8eea-451e-a788-1151f8d71d8b", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.78, "event": "http.request", "level": "INFO"}
+{"request_id": "5c5195c0-a652-4740-bd80-8e9706c4f2aa", "path": "/books", "method": "GET", "status": 200, "latency_ms": 4.137, "event": "http.request", "level": "INFO"}
+{"request_id": "1d525061-86a1-4360-ab6d-28af9a2a7b44", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.592, "event": "http.request", "level": "INFO"}
+{"request_id": "44dca2b8-7313-489e-81b7-2551f681473d", "path": "/books", "method": "GET", "status": 200, "latency_ms": 1.705, "event": "http.request", "level": "INFO"}
+{"request_id": "54e8630c-174e-46b6-9cdb-6b1305672be3", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.196, "event": "http.request", "level": "INFO"}
+{"request_id": "22b3337d-933f-4e19-8b50-2c2c39e2ac6e", "path": "/sessions/23/messages", "method": "GET", "status": 200, "latency_ms": 1.413, "event": "http.request", "level": "INFO"}
+{"request_id": "51476abd-9e20-4921-a94d-277248aff767", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.247, "event": "http.request", "level": "INFO"}
+{"request_id": "c83be28d-5990-4c55-8a92-ba0951553d7b", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.183, "event": "http.request", "level": "INFO"}
+{"request_id": "69ef16f6-0635-4257-9a29-3e620b0aa0ba", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.169, "event": "http.request", "level": "INFO"}
+{"request_id": "6ad37479-8371-4690-937e-f5d60e5953d3", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.275, "event": "http.request", "level": "INFO"}
+{"request_id": "72c6a899-07ff-481c-b2a8-de79fcbf8ee2", "path": "/books", "method": "GET", "status": 200, "latency_ms": 2.481, "event": "http.request", "level": "INFO"}
+{"request_id": "2b1bc8eb-52ba-4f96-b91b-938829653e20", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.248, "event": "http.request", "level": "INFO"}
+{"request_id": "529475e3-a94d-48f0-8a1d-11ac2c96939d", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 1.283, "event": "http.request", "level": "INFO"}
+{"request_id": "b779729a-5706-4715-818b-64d16e89592c", "path": "/books", "method": "GET", "status": 200, "latency_ms": 1.44, "event": "http.request", "level": "INFO"}
+{"request_id": "92d4ce34-3279-43de-b994-4feb4275e8e8", "path": "/sessions/23/messages", "method": "GET", "status": 200, "latency_ms": 1.301, "event": "http.request", "level": "INFO"}
+{"request_id": "9c4718d5-ebd0-4be1-88e0-e6c190a07753", "path": "/sessions/23/messages", "method": "POST", "status": 200, "latency_ms": 10.048, "event": "http.request", "level": "INFO"}
+Ollama request using model 'llama3' at 'http://localhost:11434/api/generate'
+Ollama returned status 404: {"error":"model 'llama3' not found"}
+Falling back to HuggingFace model for local generation
+{"request_id": "a8d2790e-7f43-4bb6-b6bb-5235106e0ee6", "path": "/sessions/23/messages/stream", "method": "POST", "status": 200, "latency_ms": 3436.468, "event": "http.request", "level": "INFO"}
+{"request_id": "ad92b586-48e1-4aaa-a11d-a23bed26f313", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.656, "event": "http.request", "level": "INFO"}
+{"request_id": "858bb428-2532-4759-b1e7-6f443d35463a", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.282, "event": "http.request", "level": "INFO"}
+{"request_id": "7a2beab2-be51-4863-9e6f-feab46b36f45", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 14.273, "event": "http.request", "level": "INFO"}
+{"request_id": "1890b658-9875-48d6-8bfc-c068e94f0793", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 17.94, "event": "http.request", "level": "INFO"}
+{"request_id": "cd0f7662-ac7a-47bd-983c-64dd2db4bcd9", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 3.728, "event": "http.request", "level": "INFO"}
+{"request_id": "dc1c210c-1c95-4e53-893e-a8e3304c52ce", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 2.227, "event": "http.request", "level": "INFO"}
+{"request_id": "2aef265f-b4db-437c-b331-2b61e071cc64", "path": "/sessions/23/messages", "method": "GET", "status": 200, "latency_ms": 6.793, "event": "http.request", "level": "INFO"}
+{"request_id": "dbd19528-6f25-4336-9eac-48bafa681d78", "path": "/books", "method": "GET", "status": 200, "latency_ms": 69.543, "event": "http.request", "level": "INFO"}
+{"request_id": "524e658f-f9c0-44ff-9ce8-75709153746c", "path": "/books", "method": "GET", "status": 200, "latency_ms": 1.162, "event": "http.request", "level": "INFO"}
+{"request_id": "5115b12a-19dd-4090-98af-01e0a522aec7", "path": "/sessions/23", "method": "DELETE", "status": 204, "latency_ms": 72.097, "event": "http.request", "level": "INFO"}
+{"request_id": "f6810a35-d002-4ffb-8257-868e3a263b0c", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 4.773, "event": "http.request", "level": "INFO"}
+{"request_id": "fda62ff0-81a0-489e-925e-b965c97cc2a3", "path": "/sessions", "method": "POST", "status": 200, "latency_ms": 25.47, "event": "http.request", "level": "INFO"}
+{"request_id": "4a843db6-f0ea-4347-84ff-19266ef3efa3", "path": "/sessions/24/messages", "method": "GET", "status": 200, "latency_ms": 7.382, "event": "http.request", "level": "INFO"}
+{"request_id": "41b08a9d-4104-48ae-a256-15677c33874b", "path": "/sessions/24/messages", "method": "POST", "status": 200, "latency_ms": 17.884, "event": "http.request", "level": "INFO"}
+Ollama request using model 'llama3' at 'http://localhost:11434/api/generate'
+Ollama returned status 404: {"error":"model 'llama3' not found"}
+Falling back to HuggingFace model for local generation
+We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+{"request_id": "35e11571-840e-4f82-85ba-b282fb77a697", "path": "/sessions/24/messages/stream", "method": "POST", "status": 200, "latency_ms": 5669.259, "event": "http.request", "level": "INFO"}
+{"request_id": "a44ee9ce-4537-4455-9c95-2468428ccb98", "path": "/sessions/1/messages/stream", "method": "POST", "status": 422, "latency_ms": 0.487, "event": "http.request", "level": "INFO"}
+{"request_id": "d2a09604-fa8c-4ca1-b389-e33b1f5290fb", "path": "/sessions/2/messages/stream", "method": "POST", "status": 422, "latency_ms": 1.097, "event": "http.request", "level": "INFO"}
+{"request_id": "77dcba41-5e13-400c-9343-cacc54079ace", "path": "/sessions", "method": "POST", "status": 200, "latency_ms": 6.009, "event": "http.request", "level": "INFO"}
+{"request_id": "eb0c4deb-542d-4e49-a33d-a3e1982e5928", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.389, "event": "http.request", "level": "INFO"}
+{"request_id": "078a2f67-0f42-4978-8c5c-ec6424a29a2e", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.23, "event": "http.request", "level": "INFO"}
+{"request_id": "4b8fe039-4608-4221-86c3-7e93288f1ea0", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.133, "event": "http.request", "level": "INFO"}
+{"request_id": "ec24dbf7-012a-4252-8896-cbd45215f9c3", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.556, "event": "http.request", "level": "INFO"}
+{"request_id": "1d850333-d932-4443-bbe5-5ed793ae697f", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 0.801, "event": "http.request", "level": "INFO"}
+{"request_id": "f49575b6-8871-482d-b719-a6ce3d788f40", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 1.344, "event": "http.request", "level": "INFO"}
+{"request_id": "b0439413-2c27-4c12-b6f3-6f35f12aa054", "path": "/sessions/25/messages", "method": "GET", "status": 200, "latency_ms": 1.208, "event": "http.request", "level": "INFO"}
+{"request_id": "8b1c016b-c4c3-456c-86eb-ff7ef2e803d5", "path": "/books", "method": "GET", "status": 200, "latency_ms": 17.256, "event": "http.request", "level": "INFO"}
+{"request_id": "79f71425-7448-4eac-92ca-863a6ee081b4", "path": "/books", "method": "GET", "status": 200, "latency_ms": 0.937, "event": "http.request", "level": "INFO"}
+{"request_id": "056b5f71-9c94-448f-8152-d9961ee30a94", "path": "/sessions/\u062a\u0633\u062a", "method": "POST", "status": 405, "latency_ms": 0.359, "event": "http.request", "level": "INFO"}
+{"request_id": "3953a134-f615-4181-9d4c-cb723a09e205", "path": "/sessions/25/messages", "method": "POST", "status": 200, "latency_ms": 11.602, "event": "http.request", "level": "INFO"}
+Ollama request using model 'llama3' at 'http://localhost:11434/api/generate'
+Ollama returned status 404: {"error":"model 'llama3' not found"}
+Falling back to HuggingFace model for local generation
+{"request_id": "c290d1de-f179-46fb-ab9e-528910d91b61", "path": "/sessions/25/messages/stream", "method": "POST", "status": 200, "latency_ms": 384.905, "event": "http.request", "level": "INFO"}
+{"request_id": "bb9b969b-6542-4131-b760-9a6f5db05b39", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.514, "event": "http.request", "level": "INFO"}
+{"request_id": "f8c883bb-679b-4bd3-93f3-acc84b34b236", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.379, "event": "http.request", "level": "INFO"}
+{"request_id": "81ccb1ed-0121-4cf0-98c1-60b13dfdeca7", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 12.072, "event": "http.request", "level": "INFO"}
+{"request_id": "c277c3c7-44a8-4187-9532-0796dd888ec9", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 16.02, "event": "http.request", "level": "INFO"}
+{"request_id": "7800b85e-cbc0-44bd-9434-dc5ae3f391e5", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.767, "event": "http.request", "level": "INFO"}
+{"request_id": "1299be64-252f-4011-bfff-449f67d81685", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 2.132, "event": "http.request", "level": "INFO"}
+{"request_id": "316733f1-f216-4bd8-a5e5-5f9ca32b16ce", "path": "/sessions/25/messages", "method": "GET", "status": 200, "latency_ms": 2.834, "event": "http.request", "level": "INFO"}
+{"request_id": "147a262b-ddc9-4c4a-aa63-7460d78ed6ac", "path": "/books", "method": "GET", "status": 200, "latency_ms": 63.385, "event": "http.request", "level": "INFO"}
+{"request_id": "626b68e7-9a7e-448b-962a-b3204eabe715", "path": "/books", "method": "GET", "status": 200, "latency_ms": 0.845, "event": "http.request", "level": "INFO"}
+{"request_id": "f226df0f-f31e-4084-92a2-2704175dd3ca", "path": "/sessions/25/messages", "method": "POST", "status": 200, "latency_ms": 81.376, "event": "http.request", "level": "INFO"}
+Ollama request using model 'llama3' at 'http://localhost:11434/api/generate'
+Ollama returned status 404: {"error":"model 'llama3' not found"}
+Falling back to HuggingFace model for local generation
+We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+{"request_id": "2236351a-6c76-4191-b51c-a7045f59f6d2", "path": "/sessions/25/messages/stream", "method": "POST", "status": 200, "latency_ms": 4311.671, "event": "http.request", "level": "INFO"}
+{"request_id": "7fc2b0ec-0c90-469c-a9f1-d26eda56cd8c", "path": "/bookmarks", "method": "POST", "status": 400, "latency_ms": 1.256, "event": "http.request", "level": "INFO"}
+{"request_id": "47b9d50a-db41-4900-b952-3526b62131ca", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.385, "event": "http.request", "level": "INFO"}
+{"request_id": "82027291-dc96-4b36-a5fa-429aa4947659", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.294, "event": "http.request", "level": "INFO"}
+{"request_id": "cd4b1925-4d73-4667-835d-01816cbf2c57", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 2.33, "event": "http.request", "level": "INFO"}
+{"request_id": "81a62ea5-7b54-4beb-a058-36396516f7ed", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.119, "event": "http.request", "level": "INFO"}
+{"request_id": "84bc45c9-06a1-4b9c-bad7-e8b760ff5ec8", "path": "/books", "method": "GET", "status": 200, "latency_ms": 3.139, "event": "http.request", "level": "INFO"}
+{"request_id": "764c02a9-1de7-4b8d-9597-83a41850b9e9", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.214, "event": "http.request", "level": "INFO"}
+{"request_id": "23f67078-1400-4437-9902-4a71dc5b186c", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.654, "event": "http.request", "level": "INFO"}
+{"request_id": "35ff7c74-4267-4b26-b826-f12bb931c46d", "path": "/books", "method": "GET", "status": 200, "latency_ms": 17.399, "event": "http.request", "level": "INFO"}
+{"request_id": "a900ceee-3263-440e-8d89-fddce81e9385", "path": "/sessions/25/messages", "method": "GET", "status": 200, "latency_ms": 2.407, "event": "http.request", "level": "INFO"}
+{"request_id": "92db98d5-7f4f-435b-a14f-9ce536782a21", "path": "/sessions/25/messages", "method": "POST", "status": 200, "latency_ms": 11.859, "event": "http.request", "level": "INFO"}
+Ollama request using model 'llama3' at 'http://localhost:11434/api/generate'
+Ollama returned status 404: {"error":"model 'llama3' not found"}
+Falling back to HuggingFace model for local generation
+{"request_id": "e06d2f9b-e7ac-45bd-924f-5cfa7e03ba97", "path": "/sessions/25/messages/stream", "method": "POST", "status": 200, "latency_ms": 3410.362, "event": "http.request", "level": "INFO"}
+{"request_id": "091aa85d-757a-4400-ba79-30b35443ea8d", "path": "/auth/login", "method": "POST", "status": 200, "latency_ms": 3.078, "event": "http.request", "level": "INFO"}
+{"request_id": "87169545-6c9c-4a24-a034-a1720dd2f8f8", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.217, "event": "http.request", "level": "INFO"}
+{"request_id": "69b61673-842a-41dd-8bbb-f5ba1b1e60e4", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 6.269, "event": "http.request", "level": "INFO"}
+{"request_id": "7bb35dfd-1c7a-4659-a428-9ead5c61abcd", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 20.089, "event": "http.request", "level": "INFO"}
+{"request_id": "ec09c6d5-d485-4847-adde-5e1cfa195b17", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.942, "event": "http.request", "level": "INFO"}
+{"request_id": "2b5c9694-c51b-4a38-879f-8fc06d6f6e9e", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 5.384, "event": "http.request", "level": "INFO"}
+{"request_id": "21b8070e-2a99-4fa0-b197-fbccd2574e16", "path": "/sessions/25/messages", "method": "GET", "status": 200, "latency_ms": 4.192, "event": "http.request", "level": "INFO"}
+{"request_id": "5489c3df-b827-443f-911d-07c1f9b80f96", "path": "/books", "method": "GET", "status": 200, "latency_ms": 62.293, "event": "http.request", "level": "INFO"}
+{"request_id": "7887e79a-9788-485a-900f-ddc7b15e1a33", "path": "/books", "method": "GET", "status": 200, "latency_ms": 0.857, "event": "http.request", "level": "INFO"}
+{"request_id": "c420adfb-a2af-4122-8153-b9739d00057b", "path": "/sessions/25", "method": "DELETE", "status": 204, "latency_ms": 19.444, "event": "http.request", "level": "INFO"}
+{"request_id": "763933dc-3c22-4272-9353-2daa7fdc6cca", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 5.656, "event": "http.request", "level": "INFO"}
+{"request_id": "fba5e779-b613-4258-8c12-809a72f6ac0c", "path": "/sessions/24/messages", "method": "GET", "status": 200, "latency_ms": 2.21, "event": "http.request", "level": "INFO"}
+{"request_id": "79a03870-49be-4884-9b22-88688e71e706", "path": "/sessions/24", "method": "DELETE", "status": 204, "latency_ms": 23.55, "event": "http.request", "level": "INFO"}
+{"request_id": "8280104c-1f58-4666-9deb-4fb6ad685a6e", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 6.65, "event": "http.request", "level": "INFO"}
+{"request_id": "101b3626-62b9-4d4f-9a21-ed38a6b6f9ef", "path": "/sessions", "method": "POST", "status": 200, "latency_ms": 27.315, "event": "http.request", "level": "INFO"}
+{"request_id": "d773d104-e4c8-439f-ba05-e6a9d7462546", "path": "/sessions/26/messages", "method": "GET", "status": 200, "latency_ms": 7.35, "event": "http.request", "level": "INFO"}
+{"request_id": "295c630d-2660-4556-ac0c-26c736e92842", "path": "/sessions/26/messages", "method": "POST", "status": 200, "latency_ms": 25.772, "event": "http.request", "level": "INFO"}
+Ollama request using model 'aya:latest' at 'http://localhost:11434/api/generate'
+{"request_id": "528db597-1da6-4bdc-a65d-457a602ebc5e", "path": "/sessions/26/messages/stream", "method": "POST", "status": 200, "latency_ms": 7436.431, "event": "http.request", "level": "INFO"}
+{"request_id": "30eca933-e315-4b0e-b505-16c60b6c1377", "path": "/sessions/26/messages", "method": "POST", "status": 200, "latency_ms": 12.318, "event": "http.request", "level": "INFO"}
+Ollama request using model 'aya:latest' at 'http://localhost:11434/api/generate'
+{"request_id": "cf2f23c0-3ab2-4df0-96fc-e959aced4016", "path": "/sessions/26/messages/stream", "method": "POST", "status": 200, "latency_ms": 6065.514, "event": "http.request", "level": "INFO"}
+{"request_id": "1811c690-df13-47dd-9bd4-7166c7600800", "path": "/sessions/26/messages", "method": "POST", "status": 200, "latency_ms": 16.142, "event": "http.request", "level": "INFO"}
+Ollama request using model 'aya:latest' at 'http://localhost:11434/api/generate'
+{"request_id": "62667466-a600-4dba-b75f-48ff245b6082", "path": "/sessions/26/messages/stream", "method": "POST", "status": 200, "latency_ms": 6131.305, "event": "http.request", "level": "INFO"}
+{"request_id": "10b886f3-14f2-42aa-9902-c4e428e2703c", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.258, "event": "http.request", "level": "INFO"}
+{"request_id": "6d7735c1-04e6-4e10-a809-d861506abe41", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.254, "event": "http.request", "level": "INFO"}
+{"request_id": "f98ebe9d-276b-4325-8b36-6fc3cf058840", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 1.453, "event": "http.request", "level": "INFO"}
+{"request_id": "a45a525d-83c4-473d-a4af-2cf76c201599", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.64, "event": "http.request", "level": "INFO"}
+{"request_id": "7f516162-4f26-4954-8694-a87c02b88e0e", "path": "/books", "method": "GET", "status": 200, "latency_ms": 2.976, "event": "http.request", "level": "INFO"}
+{"request_id": "388c96f8-a0aa-437c-afda-5fb9ed2657b2", "path": "/sessions/26/messages", "method": "GET", "status": 200, "latency_ms": 4.348, "event": "http.request", "level": "INFO"}
+{"request_id": "de7e6f50-d6f8-4078-950a-7260ab4653d9", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 4.133, "event": "http.request", "level": "INFO"}
+{"request_id": "a5352aa3-ca08-4d24-926f-1ce48296039b", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 4.772, "event": "http.request", "level": "INFO"}
+{"request_id": "0505c6fa-2727-4e81-b22d-d67fec61ad28", "path": "/books", "method": "GET", "status": 200, "latency_ms": 4.539, "event": "http.request", "level": "INFO"}
+{"request_id": "b4aec9bd-aff3-41f3-9da4-de5db1da75ff", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.509, "event": "http.request", "level": "INFO"}
+{"request_id": "e258d623-7174-47f9-b561-a1c58f5d13e1", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.337, "event": "http.request", "level": "INFO"}
+{"request_id": "eb6b6314-5b78-40e0-a0b4-ebb45c0db061", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 17.949, "event": "http.request", "level": "INFO"}
+{"request_id": "18032bde-f090-4db4-ad4a-c2ac6bf71edf", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 19.381, "event": "http.request", "level": "INFO"}
+{"request_id": "4250b0c8-3db5-4511-82e4-51af5126f1da", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.476, "event": "http.request", "level": "INFO"}
+{"request_id": "05584b30-0aa7-4291-807f-323c54f0730f", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 2.768, "event": "http.request", "level": "INFO"}
+{"request_id": "e5dcdb62-1a71-4226-9165-74e7d83fcca6", "path": "/sessions/26/messages", "method": "GET", "status": 200, "latency_ms": 4.423, "event": "http.request", "level": "INFO"}
+{"request_id": "e56c3e9c-df43-424c-924a-6d75e334f962", "path": "/books", "method": "GET", "status": 200, "latency_ms": 73.863, "event": "http.request", "level": "INFO"}
+{"request_id": "6fdb15ea-fcba-4643-9d38-3b98ac883e2d", "path": "/books", "method": "GET", "status": 200, "latency_ms": 0.903, "event": "http.request", "level": "INFO"}
+{"request_id": "79f94622-e7f3-4eab-ad65-99a5b588b3a5", "path": "/sessions/26/messages", "method": "POST", "status": 200, "latency_ms": 37.648, "event": "http.request", "level": "INFO"}
+Ollama request using model 'aya:latest' at 'http://localhost:11434/api/generate'
+{"request_id": "6fd7fde6-7ea8-4f10-a626-abd6fb9ded59", "path": "/sessions/26/messages/stream", "method": "POST", "status": 200, "latency_ms": 8010.469, "event": "http.request", "level": "INFO"}
+{"request_id": "0e689316-67f1-4006-9875-6e82a7f78c94", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.525, "event": "http.request", "level": "INFO"}
+{"request_id": "08ffe8e0-5e0b-4746-acb9-f29286c1fe19", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.248, "event": "http.request", "level": "INFO"}
+{"request_id": "0b41592b-f834-449e-b8f3-8f4c73f9475f", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 17.692, "event": "http.request", "level": "INFO"}
+{"request_id": "9bb3b8df-e8a9-4271-902a-8226cd8baf54", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 6.105, "event": "http.request", "level": "INFO"}
+{"request_id": "41494d11-5061-4583-90de-a5c0432faab6", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.964, "event": "http.request", "level": "INFO"}
+{"request_id": "52cd83af-1389-4ca5-9bcd-739da5a541ba", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.369, "event": "http.request", "level": "INFO"}
+{"request_id": "f9eecaac-26e1-423e-b4a4-674b3de16f55", "path": "/sessions/26/messages", "method": "GET", "status": 200, "latency_ms": 4.665, "event": "http.request", "level": "INFO"}
+{"request_id": "432ae984-4fe5-40ca-95e3-089247c7ffd1", "path": "/books", "method": "GET", "status": 200, "latency_ms": 54.791, "event": "http.request", "level": "INFO"}
+{"request_id": "cd4133b1-2e03-45cd-a1fb-c79e58d32d20", "path": "/books", "method": "GET", "status": 200, "latency_ms": 1.036, "event": "http.request", "level": "INFO"}
+{"request_id": "a1fe5009-e1dc-4c61-9757-5551c0ec48e9", "path": "/sessions", "method": "POST", "status": 200, "latency_ms": 38.021, "event": "http.request", "level": "INFO"}
+{"request_id": "6b2daa6a-951e-4baa-96c4-77e7b1731be8", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 1.359, "event": "http.request", "level": "INFO"}
+{"request_id": "b9ebb780-291c-44ec-b0f5-2656d845c8e1", "path": "/sessions/27/messages", "method": "POST", "status": 200, "latency_ms": 12.177, "event": "http.request", "level": "INFO"}
+Ollama request using model 'aya:latest' at 'http://localhost:11434/api/generate'
+{"request_id": "e8915a76-9586-4dfc-ae01-d148d6371215", "path": "/sessions/27/messages/stream", "method": "POST", "status": 200, "latency_ms": 3692.888, "event": "http.request", "level": "INFO"}
+{"request_id": "4a1ce4b5-5b66-4976-b5c0-2f57f7cb8b9a", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.428, "event": "http.request", "level": "INFO"}
+{"request_id": "3463d5c1-4078-4502-b98b-2b159d31c20c", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.273, "event": "http.request", "level": "INFO"}
+{"request_id": "8b2b6e0a-3918-4506-bd59-83b2b92d4f97", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.78, "event": "http.request", "level": "INFO"}
+{"request_id": "85f327d2-6a79-41ff-853e-85752bbcaddc", "path": "/books", "method": "GET", "status": 200, "latency_ms": 4.134, "event": "http.request", "level": "INFO"}
+{"request_id": "40fd4a16-09fa-4b97-9399-a40b32c9a26b", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 4.848, "event": "http.request", "level": "INFO"}
+{"request_id": "48d379e1-1a3b-46ba-bfed-3fca12ae3e44", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.097, "event": "http.request", "level": "INFO"}
+{"request_id": "26409975-93b9-449c-8e1e-c6741b6fd7dd", "path": "/books", "method": "GET", "status": 200, "latency_ms": 1.773, "event": "http.request", "level": "INFO"}
+{"request_id": "d3f3b4ac-69d4-460b-9611-a962ca040c5c", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 1.386, "event": "http.request", "level": "INFO"}
+{"request_id": "66f9e336-3ae2-4fd7-8dac-90121c40b6ff", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 1.441, "event": "http.request", "level": "INFO"}
+{"request_id": "a3aff7fa-cf0a-4518-a0df-2f0657385af5", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.394, "event": "http.request", "level": "INFO"}
+{"request_id": "aba2c56d-69b0-4d6a-9e38-e89df8740b7f", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.35, "event": "http.request", "level": "INFO"}
+{"request_id": "4f6d9d24-f708-4337-affb-dc0e504e3555", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.342, "event": "http.request", "level": "INFO"}
+{"request_id": "69d4eaae-4f8e-4495-83a6-52cd224ece6a", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 4.614, "event": "http.request", "level": "INFO"}
+{"request_id": "aed8ce5f-20aa-465f-991a-8b74ce1dcc46", "path": "/books", "method": "GET", "status": 200, "latency_ms": 5.007, "event": "http.request", "level": "INFO"}
+{"request_id": "c55a187b-6b23-41f7-8cdc-0dd6f4bee5a0", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.984, "event": "http.request", "level": "INFO"}
+{"request_id": "f3ccb0b4-c1be-45b8-9717-ee6ba548bfe2", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.821, "event": "http.request", "level": "INFO"}
+{"request_id": "234da8c3-b467-4b42-9aa1-c2d9c51470c2", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 2.867, "event": "http.request", "level": "INFO"}
+{"request_id": "f3dd74d5-002e-4e26-ba95-f1a214f59fd8", "path": "/books", "method": "GET", "status": 200, "latency_ms": 4.126, "event": "http.request", "level": "INFO"}
+{"request_id": "ef92212d-0edd-432d-8614-93816b364773", "path": "/sessions/27/messages", "method": "POST", "status": 200, "latency_ms": 12.314, "event": "http.request", "level": "INFO"}
+Ollama request using model 'aya:latest' at 'http://localhost:11434/api/generate'
+{"request_id": "44d58e95-d8c1-4c99-90e9-e37a32509045", "path": "/sessions/27/messages/stream", "method": "POST", "status": 200, "latency_ms": 3079.129, "event": "http.request", "level": "INFO"}
+{"request_id": "59993ac9-2808-4367-9e2a-9c3889ec0bd0", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.45, "event": "http.request", "level": "INFO"}
+{"request_id": "8bcf3102-13f3-4623-b9cf-78c580bfc77a", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.411, "event": "http.request", "level": "INFO"}
+{"request_id": "4670b7bb-e813-4b8d-b5f6-d1c9cc53c145", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 2.411, "event": "http.request", "level": "INFO"}
+{"request_id": "7cbc5868-d0f6-455b-ab39-89e36b112903", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 4.223, "event": "http.request", "level": "INFO"}
+{"request_id": "dc9f6d7d-d4fc-4877-8729-444925197c86", "path": "/books", "method": "GET", "status": 200, "latency_ms": 4.626, "event": "http.request", "level": "INFO"}
+{"request_id": "d6fa7320-0295-4380-a72e-545357a16799", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 1.282, "event": "http.request", "level": "INFO"}
+{"request_id": "2c50cf4c-737c-4e83-8af2-393922f800c6", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.468, "event": "http.request", "level": "INFO"}
+{"request_id": "af540836-1388-44fe-acf3-796bd6bfe44c", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 2.591, "event": "http.request", "level": "INFO"}
+{"request_id": "defdd7f4-e04e-4cf0-93a1-a742b7bd5168", "path": "/books", "method": "GET", "status": 200, "latency_ms": 5.072, "event": "http.request", "level": "INFO"}
