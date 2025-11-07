@@ -130,6 +130,17 @@ describe('ChatPage', () => {
       }
       const method = (init?.method ?? 'GET').toUpperCase();
 
+      if (url === '/books' && method === 'GET') {
+        return Promise.resolve(
+          createJsonResponse({
+            books: [
+              { book_id: 'book1', title: 'Physics 101' },
+              { book_id: 'book2', title: 'Chemistry Basics' },
+            ],
+          }),
+        );
+      }
+
       if (url === '/bookmarks' && method === 'GET') {
         return Promise.resolve(createJsonResponse({ bookmarks: [] }));
       }
@@ -347,7 +358,7 @@ describe('ChatPage', () => {
       expect(assistantScrollSpy).toHaveBeenCalled();
     });
 
-    const citationLink = await screen.findByRole('link', { name: '[book1:12-14]' });
+    const citationLink = await screen.findByRole('link', { name: /Physics 101/i });
     expect(citationLink).toHaveAttribute('href', '/viewer?book=book1#page=12');
 
     await waitFor(() => {
@@ -362,6 +373,195 @@ describe('ChatPage', () => {
     });
 
     warnSpy.mockRestore();
+  });
+
+  it('allows searching within indexed books', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch');
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const raw =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      let url = raw;
+      if (/^https?:/i.test(raw)) {
+        const parsed = new URL(raw);
+        url = `${parsed.pathname}${parsed.search}`;
+      }
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url === '/books' && method === 'GET') {
+        return Promise.resolve(
+          createJsonResponse({
+            books: [
+              { book_id: 'book-1', title: 'Linear Algebra' },
+              { book_id: 'book-2', title: 'Advanced Calculus' },
+            ],
+          }),
+        );
+      }
+
+      if (url === '/bookmarks' && method === 'GET') {
+        return Promise.resolve(createJsonResponse({ bookmarks: [] }));
+      }
+
+      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'GET') {
+        return Promise.resolve(createJsonResponse({ messages: [] }));
+      }
+
+      if (url.startsWith('/sessions') && method === 'GET') {
+        return Promise.resolve(
+          createJsonResponse([
+            {
+              id: MOCK_SESSION_ID,
+              title: 'Mock Session',
+            },
+          ]),
+        );
+      }
+
+      if (url.startsWith('/search') && method === 'GET') {
+        return Promise.resolve(
+          createJsonResponse({
+            results: [
+              {
+                book_id: 'book-2',
+                page_num: 42,
+                text: 'The definite integral builds on the notion of limits and areas.',
+                score: 0.87,
+              },
+            ],
+          }),
+        );
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+    });
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    const calculusChip = await screen.findByRole('button', { name: 'Advanced Calculus' });
+    await act(async () => {
+      await user.click(calculusChip);
+    });
+
+    const searchInput = screen.getByLabelText('Search across indexed books');
+    await act(async () => {
+      await user.type(searchInput, 'integral');
+    });
+
+    const searchButton = screen.getByRole('button', { name: 'Search' });
+    await act(async () => {
+      await user.click(searchButton);
+    });
+
+    await waitFor(() => {
+      const searchCall = fetchMock.mock.calls.find(
+        ([request]) => typeof request === 'string' && request.startsWith('/search?'),
+      );
+      expect(searchCall?.[0]).toContain('query=integral');
+      expect(searchCall?.[0]).toContain('book_id=book-2');
+    });
+
+    expect(
+      await screen.findByText(/The definite integral builds on the notion of limits and areas./i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Score 0\.870/i)).toBeInTheDocument();
+
+    const viewerLink = screen.getByRole('link', { name: 'Open in viewer' });
+    expect(viewerLink).toHaveAttribute('href', '/viewer?book=book-2#page=42');
+  });
+
+  it('renames a session inline', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch');
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const raw =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      let url = raw;
+      if (/^https?:/i.test(raw)) {
+        const parsed = new URL(raw);
+        url = `${parsed.pathname}${parsed.search}`;
+      }
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url === '/books' && method === 'GET') {
+        return Promise.resolve(createJsonResponse({ books: [] }));
+      }
+
+      if (url === '/bookmarks' && method === 'GET') {
+        return Promise.resolve(createJsonResponse({ bookmarks: [] }));
+      }
+
+      if (url.startsWith(`/sessions/${MOCK_SESSION_ID}/messages`) && method === 'GET') {
+        return Promise.resolve(createJsonResponse({ messages: [] }));
+      }
+
+      if (url.startsWith('/sessions') && method === 'GET') {
+        return Promise.resolve(
+          createJsonResponse([
+            {
+              id: MOCK_SESSION_ID,
+              title: 'Untitled session',
+              last_activity: '2024-01-01T00:00:00Z',
+            },
+          ]),
+        );
+      }
+
+      if (url === `/sessions/${MOCK_SESSION_ID}` && method === 'PATCH') {
+        return Promise.resolve(
+          createJsonResponse({
+            session: {
+              id: MOCK_SESSION_ID,
+              title: 'My Topic Notes',
+              last_activity: '2024-01-01T00:05:00Z',
+              updated_at: '2024-01-01T00:05:00Z',
+            },
+          }),
+        );
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+    });
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Untitled session' })).toBeInTheDocument();
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Rename' }));
+    });
+
+    const renameInput = screen.getByLabelText('Rename session');
+    await act(async () => {
+      await user.clear(renameInput);
+      await user.type(renameInput, 'My Topic Notes');
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/sessions/${MOCK_SESSION_ID}`,
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ title: 'My Topic Notes' }),
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2, name: 'My Topic Notes' })).toBeInTheDocument();
+    });
   });
 
   it('applies RTL styles for Persian assistant messages', async () => {
@@ -380,6 +580,10 @@ describe('ChatPage', () => {
           url = `${parsed.pathname}${parsed.search}`;
         }
         const method = (init?.method ?? 'GET').toUpperCase();
+
+        if (url === '/books' && method === 'GET') {
+          return Promise.resolve(createJsonResponse({ books: [] }));
+        }
 
         if (url === '/bookmarks' && method === 'GET') {
           return Promise.resolve(createJsonResponse({ bookmarks: [] }));
@@ -437,6 +641,10 @@ describe('ChatPage', () => {
           url = `${parsed.pathname}${parsed.search}`;
         }
         const method = (init?.method ?? 'GET').toUpperCase();
+
+        if (url === '/books' && method === 'GET') {
+          return Promise.resolve(createJsonResponse({ books: [] }));
+        }
 
         if (url === '/bookmarks' && method === 'GET') {
           return Promise.resolve(createJsonResponse({ bookmarks: [] }));

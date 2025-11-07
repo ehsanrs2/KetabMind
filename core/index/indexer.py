@@ -396,3 +396,35 @@ def update_indexed_file_path(collection: str, file_hash: str, path: Path) -> Non
         return
     entry["path"] = str(path)
     _save_manifest(manifest)
+
+
+def list_indexed_files(collection: str | None = None) -> list[IndexedFile]:
+    """Return all manifest entries for the optional collection."""
+
+    manifest = _load_manifest()
+    entries: list[IndexedFile] = []
+    for key, entry in manifest.items():
+        if not isinstance(entry, Mapping):
+            continue
+        prefix, _, suffix = key.partition(":")
+        if collection and prefix != collection:
+            continue
+        file_hash = str(entry.get("file_hash") or suffix or "")
+        book_identifier = str(entry.get("book_id") or "")
+        version = str(entry.get("version") or "") or _new_version()
+        indexed_chunks = int(entry.get("indexed_chunks") or entry.get("chunks") or 0)
+        path_value = entry.get("path")
+        path = Path(path_value) if isinstance(path_value, str) and path_value else None
+        meta_value = entry.get("meta")
+        metadata = dict(meta_value) if isinstance(meta_value, Mapping) else None
+        entries.append(
+            IndexedFile(
+                book_id=book_identifier,
+                version=version,
+                file_hash=file_hash,
+                indexed_chunks=indexed_chunks,
+                path=path,
+                metadata=metadata,
+            )
+        )
+    return entries

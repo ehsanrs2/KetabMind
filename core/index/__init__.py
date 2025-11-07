@@ -5,6 +5,7 @@ from .indexer import (
     IndexResult,
     find_indexed_file,
     index_path,
+    list_indexed_files,
     reindex_existing_file,
     update_indexed_file_path,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "IndexResult",
     "IndexedFile",
     "find_indexed_file",
+    "list_indexed_files",
     "reindex_existing_file",
     "update_indexed_file_path",
 ]

@@ -68,6 +68,10 @@ class SessionCreate(BaseModel):  # type: ignore[misc]
     book_id: int | str | None = None
 
 
+class SessionUpdate(BaseModel):  # type: ignore[misc]
+    title: str | None = None
+
+
 class StreamMessageRequest(BaseModel):  # type: ignore[misc]
     """Request payload used when streaming assistant responses."""
 

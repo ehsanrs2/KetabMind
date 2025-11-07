@@ -10,10 +10,11 @@ import inspect
 import json
 import math
 import mimetypes
+import re
 import shutil
 import tempfile
 import time
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -46,11 +47,13 @@ from apps.api.schemas import (
     MessageCreate,
     Metadata,
     SessionCreate,
+    SessionUpdate,
     StreamMessageRequest,
 )
 from core.answer.answerer import answer, stream_answer
-from core.answer.llm import LLMError, LLMTimeoutError
+from core.answer.llm import LLMError, LLMTimeoutError, get_llm
 from core.config import settings
+from core.fts import FTSMatch
 from core.fts import get_backend as get_fts_backend
 from exporting import export_answer
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
@@ -61,6 +64,7 @@ from utils.logging import configure_logging
 from utils.pydantic_compat import BaseModel
 
 if TYPE_CHECKING:
+    from core.index import IndexedFile as IndexedFileType
     from core.index import IndexResult as IndexResultType
 
     class BaseModelProto:
@@ -68,6 +72,7 @@ if TYPE_CHECKING:
 
 else:  # pragma: no cover - runtime import
     IndexResultType = Any
+    IndexedFileType = Any
     BaseModelProto = BaseModel
 
 configure_logging()
@@ -301,6 +306,21 @@ def _delete(path: str) -> Callable[[F], F]:
             add_route("DELETE", path, func)
             return func
         raise RuntimeError("DELETE method not supported by FastAPI stub")
+
+    return decorator
+
+
+def _patch(path: str) -> Callable[[F], F]:
+    patch_handler = getattr(app, "patch", None)
+    if callable(patch_handler):
+        return cast(Callable[[F], F], patch_handler(path))
+
+    def decorator(func: F) -> F:
+        add_route = getattr(app, "_add_route", None)
+        if callable(add_route):
+            add_route("PATCH", path, func)
+            return func
+        raise RuntimeError("PATCH method not supported by FastAPI stub")
 
     return decorator
 
@@ -544,6 +564,12 @@ def _find_indexed_file(*args: Any, **kwargs: Any) -> Any:
     return _find(*args, **kwargs)
 
 
+def _list_indexed_files(*args: Any, **kwargs: Any) -> list[IndexedFileType]:
+    from core.index import list_indexed_files as _list
+
+    return _list(*args, **kwargs)
+
+
 def _index_path(*args: Any, **kwargs: Any) -> IndexResultType:
     from core.index import index_path as _index
 
@@ -589,6 +615,110 @@ def _serialize_index_result(result: IndexResultType) -> dict[str, Any]:
         "file_hash": result.file_hash,
         "indexed_chunks": result.indexed_chunks,
     }
+
+
+def _is_newer_version(candidate: str | None, current: str | None) -> bool:
+    if not candidate:
+        return False
+    if not current:
+        return True
+    return candidate > current
+
+
+def _book_title_from_meta(meta: Mapping[str, Any] | None, fallback: str) -> str:
+    if isinstance(meta, Mapping):
+        for key in ("title", "subject", "author"):
+            value = meta.get(key)
+            if isinstance(value, str):
+                title = value.strip()
+                if title:
+                    return title
+    return fallback
+
+
+def _split_book_filter(book_id: str | None) -> list[str]:
+    if not book_id:
+        return []
+    separators = [",", ";"]
+    raw_value = book_id
+    for sep in separators:
+        raw_value = raw_value.replace(sep, ",")
+    values = []
+    for part in raw_value.split(","):
+        candidate = part.strip()
+        if candidate:
+            values.append(candidate)
+    return values
+
+
+def _is_default_session_title(title: str | None) -> bool:
+    if not title:
+        return True
+    normalized = title.strip().lower()
+    if not normalized:
+        return True
+    return normalized in {"new session", "untitled session"} or normalized.startswith("session ")
+
+
+_TITLE_PROMPT = (
+    "You are KetabMind's naming assistant. "
+    "Given a user's latest question and the assistant's reply, "
+    "return a concise session title (max 6 words, title case, no punctuation).\n"
+    "Question: {question}\n"
+    "Answer: {answer}\n"
+    "Title:"
+)
+
+
+def _clean_generated_title(text: str) -> str:
+    cleaned = text.strip().splitlines()[0] if text else ""
+    cleaned = cleaned.strip("\"'“”‘’")
+    cleaned = re.sub(r"[.:]+$", "", cleaned).strip()
+    if len(cleaned) > 80:
+        cleaned = cleaned[:80].rstrip()
+    return cleaned
+
+
+def _suggest_session_title(question: str, answer: str) -> str | None:
+    if not question and not answer:
+        return None
+    prompt = _TITLE_PROMPT.format(question=question.strip(), answer=answer.strip())
+    try:
+        llm = get_llm()
+        raw = llm.generate(prompt, stream=False)
+    except Exception:
+        raw = ""
+    text = raw if isinstance(raw, str) else str(raw)
+    cleaned = _clean_generated_title(text)
+    if cleaned:
+        return cleaned
+    fallback_source = question or answer
+    tokens = fallback_source.strip().split()
+    if not tokens:
+        return None
+    return " ".join(tokens[:6]).title()
+
+
+def _maybe_autoname_session(
+    session_repo: repositories.SessionRepository,
+    message_repo: repositories.MessageRepository,
+    session_obj: models.Session,
+    message_obj: models.Message,
+) -> None:
+    if message_obj.role != "assistant":
+        return
+    if not _is_default_session_title(session_obj.title):
+        return
+    if message_repo.has_prior_assistant_message(message_obj):
+        return
+    question_obj = message_repo.get_previous_user_message(message_obj)
+    suggestion = _suggest_session_title(
+        question_obj.content if question_obj else "",
+        message_obj.content or "",
+    )
+    if not suggestion:
+        return
+    session_repo.rename(session_obj.id, suggestion)
 
 
 def _ensure_upload_root() -> Path:
@@ -706,6 +836,60 @@ def ready() -> dict[str, str]:
     return {"status": "ready"}
 
 
+@_get("/books")
+def list_books(
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    owner_id = str(current_user.get("id") or "")
+    if not owner_id:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
+    collection = settings.qdrant_collection
+    try:
+        indexed_files = _list_indexed_files(collection)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log.warning("books.list_failed", error=str(exc), exc_info=True)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to load books"
+        ) from exc
+    latest_by_book: dict[str, IndexedFileType] = {}
+    for entry in indexed_files:
+        book_id = str(getattr(entry, "book_id", "") or "")
+        if not book_id:
+            continue
+        existing = latest_by_book.get(book_id)
+        if existing is None or _is_newer_version(
+            getattr(entry, "version", None), getattr(existing, "version", None)
+        ):
+            latest_by_book[book_id] = entry
+    root = _ensure_upload_root()
+    owner_dir = root / owner_id
+    if not owner_dir.exists():
+        return {"books": []}
+    directories = sorted(
+        (p for p in owner_dir.iterdir() if p.is_dir()), key=lambda path: path.name.lower()
+    )
+    books: list[dict[str, Any]] = []
+    for book_path in directories:
+        book_id = book_path.name
+        entry = latest_by_book.get(book_id)
+        raw_meta = getattr(entry, "metadata", None) if entry is not None else None
+        metadata = dict(raw_meta) if isinstance(raw_meta, Mapping) else None
+        version = getattr(entry, "version", None) if entry is not None else None
+        file_hash = getattr(entry, "file_hash", None) if entry is not None else None
+        indexed_chunks = getattr(entry, "indexed_chunks", None) if entry is not None else None
+        books.append(
+            {
+                "book_id": book_id,
+                "title": _book_title_from_meta(metadata, book_id),
+                "metadata": metadata,
+                "version": version,
+                "file_hash": file_hash,
+                "indexed_chunks": indexed_chunks,
+            }
+        )
+    return {"books": books}
+
+
 def _csrf_headers(request: Request) -> dict[str, str]:
     token = request.cookies.get("access_token") if hasattr(request, "cookies") else None
     if isinstance(token, str) and token:
@@ -759,12 +943,33 @@ def search_pages(
             detail="Full-text search backend not configured",
         )
     page_limit = int(limit) if limit is not None else settings.fts_page_limit
+    book_filters = _split_book_filter(book_id)
     try:
-        matches = backend.search(
-            query,
-            book_id=book_id,
-            limit=max(1, page_limit),
-        )
+        matches: list[FTSMatch] | Sequence[FTSMatch]
+        if book_filters:
+            per_book_limit = max(1, math.ceil(page_limit / max(1, len(book_filters))))
+            combined: list[FTSMatch] = []
+            seen: set[tuple[str, int]] = set()
+            for book_filter in book_filters:
+                subset = backend.search(
+                    query,
+                    book_id=book_filter,
+                    limit=per_book_limit,
+                )
+                for match in subset:
+                    key = (match.book_id, match.page_num)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    combined.append(match)
+            combined.sort(key=lambda item: item.score, reverse=True)
+            matches = combined[:page_limit]
+        else:
+            matches = backend.search(
+                query,
+                limit=max(1, page_limit),
+                book_id=None,
+            )
     except Exception as exc:  # pragma: no cover - defensive logging
         log.warning("search.fts_failed", error=str(exc), exc_info=True)
         raise HTTPException(
@@ -1165,6 +1370,26 @@ def create_session(
         return {"session": _serialize_session(session_obj, db_session)}
 
 
+@_patch("/sessions/{session_id}")
+def update_session(
+    session_id: str,
+    payload: SessionUpdate,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
+    session_pk = _parse_identifier(session_id, field="session_id")
+    new_title = (payload.title or "").strip()
+    if not new_title:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Title is required")
+    with session_scope() as db_session:
+        owner = _ensure_owner(db_session, current_user)
+        session_repo = repositories.SessionRepository(db_session, owner.id)
+        record = session_repo.rename(session_pk, new_title)
+        if record is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        db_session.refresh(record)
+        return {"session": _serialize_session(record, db_session)}
+
+
 @_get("/sessions/{session_id}/messages")
 def session_messages(
     session_id: str,
@@ -1208,6 +1433,9 @@ def create_session_message(
             meta=payload.meta,
         )
         db_session.refresh(message)
+        if role == "assistant":
+            with suppress(Exception):
+                _maybe_autoname_session(session_repo, message_repo, session_obj, message)
         return {"message": _serialize_message(message)}
 
 

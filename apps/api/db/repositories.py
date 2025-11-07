@@ -149,6 +149,15 @@ class SessionRepository(_BaseRepository):
         self.session.add(record)
         return True
 
+    def rename(self, session_id: int, title: str) -> models.Session | None:
+        record = self.get(session_id)
+        if record is None:
+            return None
+        record.title = title
+        self.session.add(record)
+        self.session.flush()
+        return record
+
     def create(self, *, title: str, book_id: int | None = None) -> models.Session:
         book_ref: models.Book | None = None
         if book_id is not None:
@@ -282,6 +291,19 @@ class MessageRepository(_BaseRepository):
             .limit(1)
         )
         return self._one(stmt)
+
+    def has_prior_assistant_message(self, message: models.Message) -> bool:
+        stmt = (
+            select(models.Message.id)
+            .where(
+                models.Message.owner_id == self.owner_id,
+                models.Message.session_id == message.session_id,
+                models.Message.id < message.id,
+                models.Message.role == "assistant",
+            )
+            .limit(1)
+        )
+        return self.session.scalar(stmt) is not None
 
 
 def delete_sessions_older_than(session: Session, *, older_than: datetime) -> int:

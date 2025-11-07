@@ -26,6 +26,7 @@ type CitationLink = {
   href: string;
   bookId: string;
   page: number;
+  pageRange?: string | null;
 };
 
 type ChatMessage = {
@@ -103,6 +104,47 @@ type BookmarkRecord = {
   createdAt?: string | null;
   tag: string | null;
   message: ChatMessage;
+};
+
+type BookRecord = {
+  bookId: string;
+  title: string;
+  metadata?: Record<string, unknown> | null;
+  version?: string | null;
+  fileHash?: string | null;
+  indexedChunks?: number | null;
+};
+
+type BooksResponse = {
+  books?: Array<{
+    book_id?: string | number | null;
+    bookId?: string | number | null;
+    title?: string | null;
+    metadata?: Record<string, unknown> | null;
+    version?: string | number | null;
+    file_hash?: string | null;
+    fileHash?: string | null;
+    indexed_chunks?: number | string | null;
+    indexedChunks?: number | string | null;
+  }>;
+};
+
+type SearchResult = {
+  bookId: string;
+  pageNum: number;
+  text: string;
+  score: number | null;
+};
+
+type SearchResponse = {
+  results?: Array<{
+    book_id?: string | number | null;
+    bookId?: string | number | null;
+    page_num?: number | string | null;
+    pageNum?: number | string | null;
+    text?: string | null;
+    score?: number | string | null;
+  }>;
 };
 
 const ALL_BOOKMARKS_FILTER = 'all';
@@ -228,6 +270,13 @@ function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
   return merged;
 }
 
+function formatPageRange(start: number, end: number): string {
+  if (start === end) {
+    return `p. ${start}`;
+  }
+  return `pp. ${start}-${end}`;
+}
+
 function buildCitationLinksFromContexts(
   contexts: Array<Record<string, unknown>>,
 ): CitationLink[] {
@@ -291,7 +340,13 @@ function buildCitationLinksFromContexts(
       const pageRange = start === end ? `${start}` : `${start}-${end}`;
       const label = `[${bookId}:${pageRange}]`;
       const href = `/viewer?book=${encodeURIComponent(bookId)}#page=${start}`;
-      links.push({ label, href, page: start, bookId });
+      links.push({
+        label,
+        href,
+        page: start,
+        bookId,
+        pageRange: formatPageRange(start, end),
+      });
     }
   });
 
@@ -330,7 +385,15 @@ function buildCitationLinksFromStrings(citations: string[] | undefined): Citatio
     const end = endRaw ? Number.parseInt(endRaw, 10) : start;
     const label = text.startsWith('[') ? text : `[${text}]`;
     const href = `/viewer?book=${encodeURIComponent(bookId)}#page=${start}`;
-    normalised.push({ label, href, bookId, page: Number.isFinite(start) ? start : 1 });
+    const safeStart = Number.isFinite(start) ? start : 1;
+    const normalisedEnd = end && Number.isFinite(end) ? end : safeStart;
+    normalised.push({
+      label,
+      href,
+      bookId,
+      page: safeStart,
+      pageRange: formatPageRange(safeStart, normalisedEnd),
+    });
     if (end && Number.isFinite(end) && end !== start) {
       // ensure the label captures the end of the range as provided
       normalised[normalised.length - 1].label = `[${bookId}:${start}-${end}]`;
@@ -494,6 +557,105 @@ function normaliseBookmark(item: BookmarksResponse['bookmarks'][number]): Bookma
   } satisfies BookmarkRecord;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function normaliseBook(item: BooksResponse['books'][number]): BookRecord | null {
+  if (!item) {
+    return null;
+  }
+  const bookIdRaw = item.book_id ?? item.bookId;
+  if (bookIdRaw === null || bookIdRaw === undefined) {
+    return null;
+  }
+  const bookId = String(bookIdRaw).trim();
+  if (!bookId) {
+    return null;
+  }
+  const metadata = asRecord(item.metadata) ?? null;
+  const titleSources = [
+    typeof item.title === 'string' ? item.title : null,
+    metadata && typeof metadata.title === 'string' ? (metadata.title as string) : null,
+    metadata && typeof metadata.subject === 'string' ? (metadata.subject as string) : null,
+    metadata && typeof metadata.author === 'string' ? (metadata.author as string) : null,
+  ];
+  const resolvedTitle =
+    titleSources
+      .map((value) => (value ? value.trim() : ''))
+      .find((value) => value.length > 0) ?? bookId;
+  const versionRaw = item.version;
+  const version =
+    typeof versionRaw === 'string'
+      ? versionRaw
+      : typeof versionRaw === 'number'
+        ? String(versionRaw)
+        : null;
+  const fileHashRaw = item.file_hash ?? item.fileHash;
+  const fileHash = typeof fileHashRaw === 'string' ? fileHashRaw : null;
+  const indexedChunksRaw = item.indexed_chunks ?? item.indexedChunks;
+  const indexedChunks = extractNumber(indexedChunksRaw);
+
+  return {
+    bookId,
+    title: resolvedTitle,
+    metadata,
+    version,
+    fileHash,
+    indexedChunks,
+  };
+}
+
+function extractBooks(payload: unknown): BookRecord[] {
+  if (Array.isArray(payload)) {
+    return payload
+      .map((item) => normaliseBook(item as BooksResponse['books'][number]))
+      .filter((item): item is BookRecord => item !== null);
+  }
+  if (payload && typeof payload === 'object' && 'books' in payload) {
+    const booksPayload = (payload as BooksResponse).books;
+    if (Array.isArray(booksPayload)) {
+      return booksPayload
+        .map((item) => normaliseBook(item))
+        .filter((item): item is BookRecord => item !== null);
+    }
+  }
+  return [];
+}
+
+function normaliseSearchResult(item: SearchResponse['results'][number]): SearchResult | null {
+  if (!item) {
+    return null;
+  }
+  const rawBookId = item.book_id ?? item.bookId;
+  if (rawBookId === null || rawBookId === undefined) {
+    return null;
+  }
+  const bookId = String(rawBookId).trim();
+  if (!bookId) {
+    return null;
+  }
+  const pageNum = extractNumber(item.page_num ?? item.pageNum);
+  if (pageNum === null) {
+    return null;
+  }
+  const text = typeof item.text === 'string' ? item.text : '';
+  const scoreRaw = item.score;
+  let score: number | null = null;
+  if (typeof scoreRaw === 'number') {
+    score = Number.isFinite(scoreRaw) ? scoreRaw : null;
+  } else if (typeof scoreRaw === 'string') {
+    const parsed = Number.parseFloat(scoreRaw);
+    if (Number.isFinite(parsed)) {
+      score = parsed;
+    }
+  }
+  return { bookId, pageNum, text, score };
+}
+
 export default function ChatPage() {
   const { csrfToken } = useAuth();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -514,11 +676,28 @@ export default function ChatPage() {
   const [pendingBookmarkId, setPendingBookmarkId] = useState<string | null>(null);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState<string | null>(null);
   const [activeBookmarkMessageId, setActiveBookmarkMessageId] = useState<string | null>(null);
+  const [books, setBooks] = useState<BookRecord[]>([]);
+  const [booksError, setBooksError] = useState<string | null>(null);
+  const [isLoadingBooks, setIsLoadingBooks] = useState(false);
+  const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
+  const [isRenamingSession, setIsRenamingSession] = useState(false);
+  const [sessionTitleDraft, setSessionTitleDraft] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useRTL(language);
+
+  const selectedSession = useMemo(
+    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
+    [selectedSessionId, sessions],
+  );
 
   const handleSessionSearchChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setSessionSearch(event.target.value);
@@ -541,22 +720,80 @@ export default function ChatPage() {
     }
   }, []);
 
+  const toggleBookSelection = useCallback((bookId: string) => {
+    setSelectedBookIds((previous) => {
+      if (previous.includes(bookId)) {
+        return previous.filter((id) => id !== bookId);
+      }
+      return [...previous, bookId];
+    });
+  }, []);
+
+  const handleClearBookSelection = useCallback(() => {
+    setSelectedBookIds([]);
+  }, []);
+
+  const handleSearchQueryChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+    setSearchError(null);
+    setSearchMessage(null);
+  }, []);
+
+  const handleBeginRename = useCallback(() => {
+    if (!selectedSession) {
+      return;
+    }
+    setSessionTitleDraft(selectedSession.title);
+    setIsRenamingSession(true);
+    setRenameError(null);
+  }, [selectedSession]);
+
+  const handleRenameCancel = useCallback(() => {
+    setIsRenamingSession(false);
+    setSessionTitleDraft(selectedSession?.title ?? '');
+    setRenameError(null);
+  }, [selectedSession]);
+
+  const handleRenameChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setSessionTitleDraft(event.target.value);
+  }, []);
+
   const bookmarkedMessageIds = useMemo(
     () => new Set(allBookmarks.map((bookmark) => bookmark.message.id)),
     [allBookmarks],
   );
 
+  const sortedBooks = useMemo(
+    () => [...books].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })),
+    [books],
+  );
+
+  const bookTitleLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const book of books) {
+      map.set(book.bookId, book.title);
+    }
+    return map;
+  }, [books]);
+  const searchInputPlaceholder =
+    selectedBookIds.length > 0
+      ? `Search within ${selectedBookIds.length} selected book${selectedBookIds.length === 1 ? '' : 's'}`
+      : sortedBooks.length > 0
+        ? 'Search across all indexed books'
+        : 'Search your indexed books';
+  const isSearchSubmitDisabled = isSearching || searchQuery.trim().length === 0;
+
   const availableBookmarkTags = useMemo(() => {
     const tags = new Set<string>();
     let hasUntagged = false;
     for (const bookmark of allBookmarks) {
-    if (bookmark.tag) {
-      tags.add(bookmark.tag);
-    } else {
-      hasUntagged = true;
+      if (bookmark.tag) {
+        tags.add(bookmark.tag);
+      } else {
+        hasUntagged = true;
+      }
     }
-  }
-  const sorted = Array.from(tags).sort((a, b) => a.localeCompare(b));
+    const sorted = Array.from(tags).sort((a, b) => a.localeCompare(b));
     if (hasUntagged) {
       sorted.unshift(UNTAGGED_BOOKMARKS_FILTER);
     }
@@ -590,6 +827,25 @@ export default function ChatPage() {
     }
   }, [availableBookmarkTags, bookmarkFilterTag]);
 
+  useEffect(() => {
+    setSelectedBookIds((current) =>
+      current.filter((bookId) => books.some((book) => book.bookId === bookId)),
+    );
+  }, [books]);
+
+  useEffect(() => {
+    if (selectedSession) {
+      setSessionTitleDraft(selectedSession.title);
+      setIsRenamingSession(false);
+      setRenameError(null);
+    } else {
+      setSessionTitleDraft('');
+      setIsRenamingSession(false);
+      setRenameError(null);
+    }
+  }, [selectedSession?.id, selectedSession?.title]);
+
+
   const registerMessageRef = useCallback(
     (messageId: string) =>
       (element: HTMLDivElement | null) => {
@@ -601,6 +857,28 @@ export default function ChatPage() {
       },
     [],
   );
+
+  const loadBooks = useCallback(async () => {
+    setIsLoadingBooks(true);
+    setBooksError(null);
+    try {
+      const response = await fetch('/books', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load books');
+      }
+      const payload = await response.json();
+      const mapped = extractBooks(payload);
+      setBooks(mapped);
+    } catch (err) {
+      console.warn('Failed to load books', err);
+      setBooks([]);
+      setBooksError('Unable to load indexed books.');
+    } finally {
+      setIsLoadingBooks(false);
+    }
+  }, []);
 
   const csrfHeaders = useMemo(() => (csrfToken ? { 'x-csrf-token': csrfToken } : {}), [csrfToken]);
   const hasCsrfToken = useMemo(() => Object.keys(csrfHeaders).length > 0, [csrfHeaders]);
@@ -670,6 +948,99 @@ export default function ChatPage() {
     [],
   );
 
+  const handleSearchSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (isSearching) {
+        return;
+      }
+      const trimmedQuery = searchQuery.trim();
+      if (!trimmedQuery) {
+        setSearchError('Enter a phrase to search your indexed books.');
+        setSearchMessage(null);
+        setSearchResults([]);
+        return;
+      }
+      setSearchError(null);
+      setSearchMessage(null);
+      setIsSearching(true);
+      try {
+        const params = new URLSearchParams({ query: trimmedQuery });
+        if (selectedBookIds.length > 0) {
+          params.set('book_id', selectedBookIds.join(','));
+        }
+        const response = await fetch(`/search?${params.toString()}`, {
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          throw new Error('Search failed');
+        }
+        const payload = (await response.json()) as SearchResponse;
+        const mapped = (payload.results ?? [])
+          .map((item) => normaliseSearchResult(item))
+          .filter((item): item is SearchResult => item !== null);
+        setSearchResults(mapped);
+        setSearchMessage(mapped.length === 0 ? 'No matches found.' : null);
+      } catch (err) {
+        console.warn('Search request failed', err);
+        setSearchError('Unable to search right now.');
+        setSearchMessage(null);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [isSearching, searchQuery, selectedBookIds],
+  );
+
+  const handleRenameSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!selectedSessionId) {
+        setRenameError('Select a session to rename.');
+        return;
+      }
+      const trimmed = sessionTitleDraft.trim();
+      if (!trimmed) {
+        setRenameError('Title cannot be empty.');
+        return;
+      }
+      try {
+        const response = await fetch(`/sessions/${selectedSessionId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...csrfHeaders,
+          },
+          credentials: 'include',
+          body: JSON.stringify({ title: trimmed }),
+        });
+        if (!response.ok) {
+          throw new Error('Rename failed');
+        }
+        const payload = await response.json();
+        const updated = normaliseSession(payload.session as SessionPayload);
+        if (updated) {
+          setSessions((previous) =>
+            previous.map((session) => (session.id === updated.id ? updated : session)),
+          );
+        } else {
+          setSessions((previous) =>
+            previous.map((session) =>
+              session.id === selectedSessionId ? { ...session, title: trimmed } : session,
+            ),
+          );
+        }
+        setIsRenamingSession(false);
+        setRenameError(null);
+      } catch (err) {
+        console.warn('Failed to rename session', err);
+        setRenameError('Unable to rename session.');
+      }
+    },
+    [csrfHeaders, selectedSessionId, sessionTitleDraft],
+  );
+
   const loadMessages = useCallback(
     async (sessionId: string) => {
       setIsLoadingMessages(true);
@@ -727,6 +1098,10 @@ export default function ChatPage() {
   }, [loadBookmarks]);
 
   useEffect(() => {
+    void loadBooks();
+  }, [loadBooks]);
+
+  useEffect(() => {
     if (!selectedSessionId) {
       setMessages([]);
       return;
@@ -757,11 +1132,6 @@ export default function ChatPage() {
       element.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, [messages, pendingScrollMessageId]);
-
-  const selectedSession = useMemo(
-    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
-    [selectedSessionId, sessions],
-  );
 
   const persistMessage = useCallback(async (sessionId: string, message: ChatMessage) => {
     try {
@@ -1456,11 +1826,55 @@ export default function ChatPage() {
       </aside>
       <section className="chat-main">
         <header className="chat-main__header">
-          <div>
-            <h2>{selectedSession?.title ?? 'Select a session'}</h2>
+          <div className="chat-main__title-block">
+            {isRenamingSession ? (
+              <form className="chat-rename-form" onSubmit={handleRenameSubmit}>
+                <label className="chat-rename-label" htmlFor="chat-session-rename">
+                  Rename session
+                </label>
+                <input
+                  id="chat-session-rename"
+                  className="chat-rename-input"
+                  value={sessionTitleDraft}
+                  onChange={handleRenameChange}
+                  placeholder="Enter a session title"
+                  autoFocus
+                />
+                <div className="chat-rename-actions">
+                  <button
+                    type="button"
+                    className="chat-button chat-button--ghost"
+                    onClick={handleRenameCancel}
+                  >
+                    Cancel
+                  </button>
+                  <button className="chat-button" type="submit">
+                    Save
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="chat-main__title-row">
+                <h2>{selectedSession?.title ?? 'Select a session'}</h2>
+                {selectedSession ? (
+                  <button
+                    type="button"
+                    className="chat-rename-toggle"
+                    onClick={handleBeginRename}
+                  >
+                    Rename
+                  </button>
+                ) : null}
+              </div>
+            )}
             {selectedSession?.lastActivity ? (
               <p className="chat-main__meta">
                 Last activity: {formatLastActivity(selectedSession.lastActivity)}
+              </p>
+            ) : null}
+            {renameError ? (
+              <p className="chat-error chat-error--inline" role="alert">
+                {renameError}
               </p>
             ) : null}
           </div>
@@ -1473,6 +1887,105 @@ export default function ChatPage() {
             Debug
           </label>
         </header>
+
+        <section className="chat-search" aria-label="Search indexed books">
+          <div className="chat-search__control">
+            <p className="chat-search__label">Indexed books</p>
+            {sortedBooks.length === 0 ? (
+              <p className="chat-search__status">Upload a book to enable filtering.</p>
+            ) : (
+              <>
+                <div className="chat-search__book-chips" role="group" aria-label="Book filters">
+                  {sortedBooks.map((book) => {
+                    const isActive = selectedBookIds.includes(book.bookId);
+                    return (
+                      <button
+                        type="button"
+                        key={book.bookId}
+                        className={`chat-search__book-chip${isActive ? ' chat-search__book-chip--active' : ''}`}
+                        onClick={() => toggleBookSelection(book.bookId)}
+                      >
+                        {book.title}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedBookIds.length > 0 ? (
+                  <div className="chat-search__chip-footer">
+                    <span>{selectedBookIds.length} selected</span>
+                    <button
+                      type="button"
+                      className="chat-search__chip-clear"
+                      onClick={handleClearBookSelection}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+          <form className="chat-search__form" onSubmit={handleSearchSubmit}>
+            <label className="chat-search__label" htmlFor="chat-search-query">
+              Search pages
+            </label>
+            <div className="chat-search__form-row">
+              <input
+                id="chat-search-query"
+                type="search"
+                className="chat-search__input"
+                value={searchQuery}
+                onChange={handleSearchQueryChange}
+                placeholder={searchInputPlaceholder}
+                aria-label="Search across indexed books"
+              />
+              <button
+                className="chat-button chat-search__submit"
+                type="submit"
+                disabled={isSearchSubmitDisabled}
+              >
+                {isSearching ? 'Searching…' : 'Search'}
+              </button>
+            </div>
+          </form>
+          <div className="chat-search__status-list" aria-live="polite">
+            {isLoadingBooks ? (
+              <p className="chat-search__status">Loading indexed books…</p>
+            ) : null}
+            {booksError ? (
+              <p className="chat-search__status chat-search__status--error">{booksError}</p>
+            ) : null}
+            {searchError ? (
+              <p className="chat-search__status chat-search__status--error">{searchError}</p>
+            ) : null}
+            {searchMessage ? <p className="chat-search__status">{searchMessage}</p> : null}
+          </div>
+          {searchResults.length > 0 ? (
+            <ul className="chat-search__results">
+              {searchResults.map((result, index) => {
+                const displayTitle = bookTitleLookup.get(result.bookId) ?? result.bookId;
+                const scoreLabel =
+                  result.score === null ? null : result.score.toFixed(3);
+                const viewerHref = `/viewer?book=${encodeURIComponent(result.bookId)}#page=${result.pageNum}`;
+                return (
+                  <li className="chat-search__result" key={`${result.bookId}-${result.pageNum}-${index}`}>
+                    <div className="chat-search__result-meta">
+                      <span className="chat-search__result-book">{displayTitle}</span>
+                      <span className="chat-search__result-page">Page {result.pageNum}</span>
+                      {scoreLabel ? (
+                        <span className="chat-search__result-score">Score {scoreLabel}</span>
+                      ) : null}
+                    </div>
+                    <p className="chat-search__result-snippet">{result.text}</p>
+                    <a className="chat-search__result-link" href={viewerHref}>
+                      Open in viewer
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </section>
 
         {error ? <div className="chat-error" role="alert">{error}</div> : null}
 
@@ -1569,12 +2082,29 @@ export default function ChatPage() {
                     </div>
                   ) : null}
                   {citations.length > 0 ? (
-                    <div className="chat-message__citations">
-                      {citations.map((citation) => (
-                        <a key={citation.label} href={citation.href} className="chat-citation" rel="noreferrer">
-                          {citation.label}
-                        </a>
-                      ))}
+                    <div className="chat-message__citations" aria-label="References">
+                      <p className="chat-citation__title">References</p>
+                      <ol className="chat-citation-list">
+                        {citations.map((citation, index) => {
+                          const displayTitle =
+                            bookTitleLookup.get(citation.bookId) ?? citation.bookId;
+                          return (
+                            <li className="chat-citation-list__item" key={`${citation.label}-${index}`}>
+                              <span className="chat-citation__index">{index + 1}</span>
+                              <a
+                                href={citation.href}
+                                className="chat-citation__link"
+                                rel="noreferrer"
+                              >
+                                <span className="chat-citation__name">{displayTitle}</span>
+                                {citation.pageRange ? (
+                                  <span className="chat-citation__pages">{citation.pageRange}</span>
+                                ) : null}
+                              </a>
+                            </li>
+                          );
+                        })}
+                      </ol>
                     </div>
                   ) : null}
                   {debugEnabled && message.debug ? (

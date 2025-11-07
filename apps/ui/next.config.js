@@ -17,6 +17,8 @@ const config = {
       rewrite('/api/upload', '/upload'),
       rewrite('/api/index', '/index'),
       rewrite('/query', '/query'),
+      rewrite('/books', '/books'),
+      rewrite('/search', '/search'),
       rewrite('/sessions', '/sessions'),
       rewrite('/sessions/:sessionId', '/sessions/:sessionId'),
       rewrite('/sessions/:sessionId/messages', '/sessions/:sessionId/messages'),
