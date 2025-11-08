@@ -1443,11 +1443,14 @@ def create_session_message(
 async def stream_session_message(
     session_id: str,
     payload: StreamMessageRequest,
+    book_id: Annotated[str | None, Query()] = None,
     current_user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> StreamingResponse:
     """Stream an assistant response for the given session using server-sent events."""
 
     session_pk = _parse_identifier(session_id, field="session_id")
+    book_ids = _split_book_filter(book_id)
+    log.info("chat.stream.request", session_id=session_id, book_ids=book_ids)
     include_context = bool(payload.context)
     with session_scope() as db_session:
         owner = _ensure_owner(db_session, current_user)
