@@ -43,7 +43,11 @@ def test_answer_trims_contexts_within_budget(
         ),
     ]
 
-    def fake_retrieve(query: str, top_k: int) -> list[ScoredChunk]:
+    def fake_retrieve(
+        query: str,
+        *_,
+        **__,
+    ) -> list[ScoredChunk]:
         return list(contexts)
 
     monkeypatch.setenv("LLM_BACKEND", "mock")

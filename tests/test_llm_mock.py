@@ -20,7 +20,11 @@ def test_llm_mock_uses_context(monkeypatch: pytest.MonkeyPatch) -> None:
         hybrid=1.0,
     )
 
-    def fake_retrieve(query: str, top_k: int) -> list[ScoredChunk]:
+    def fake_retrieve(
+        query: str,
+        *_,
+        **__,
+    ) -> list[ScoredChunk]:
         return [top_ctx]
 
     monkeypatch.setenv("LLM_BACKEND", "mock")

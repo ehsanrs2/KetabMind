@@ -30,7 +30,11 @@ def test_second_pass_changes_contexts(monkeypatch: pytest.MonkeyPatch) -> None:
 
     queries: list[str] = []
 
-    def fake_retrieve(query: str, top_k: int) -> list[ScoredChunk]:
+    def fake_retrieve(
+        query: str,
+        *_,
+        **__,
+    ) -> list[ScoredChunk]:
         queries.append(query)
         if "explain further" in query:
             return [good_ctx]

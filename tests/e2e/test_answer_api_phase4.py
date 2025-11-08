@@ -11,6 +11,23 @@ from core.answer import answerer  # noqa: E402
 from fastapi import URL, Request  # noqa: E402
 
 
+def _make_request(method: str, url: URL) -> Request:
+    scope: dict[str, Any] = {
+        "type": "http",
+        "method": method,
+        "path": url.path,
+        "root_path": "",
+        "scheme": url.scheme or "http",
+        "headers": [],
+        "query_string": (url.query or "").encode("utf-8"),
+    }
+
+    async def _receive() -> dict[str, Any]:  # pragma: no cover - minimal stub
+        return {"type": "http.request"}
+
+    return Request(scope, _receive)
+
+
 @pytest.fixture(autouse=True)
 def _stub_answer(monkeypatch: pytest.MonkeyPatch) -> None:
     fa_result = {
@@ -60,7 +77,7 @@ def _stub_answer(monkeypatch: pytest.MonkeyPatch) -> None:
         "english question": en_result,
     }
 
-    def fake_answer(query: str, top_k: int = 8) -> dict:
+    def fake_answer(query: str, top_k: int = 8, *, book_id: str | None = None) -> dict:
         try:
             return responses[query]
         except KeyError as exc:  # pragma: no cover - defensive
@@ -92,10 +109,11 @@ def _stub_answer(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_query_response_meta_and_debug_farsi() -> None:
     from apps.api.main import QueryRequest, query  # noqa: PLC0415
 
-    request = Request("POST", URL("/query"))
+    request = _make_request("POST", URL("/query"))
     payload = query(
         QueryRequest(q="پرسش فارسی", top_k=1),
         request=request,
+        _user={},
         stream=False,
         debug=True,
     )
@@ -119,10 +137,11 @@ def test_query_response_meta_and_debug_farsi() -> None:
 def test_query_response_meta_english() -> None:
     from apps.api.main import QueryRequest, query  # noqa: PLC0415
 
-    request = Request("POST", URL("/query"))
+    request = _make_request("POST", URL("/query"))
     payload = query(
         QueryRequest(q="english question", top_k=1),
         request=request,
+        _user={},
         stream=False,
         debug=False,
     )
