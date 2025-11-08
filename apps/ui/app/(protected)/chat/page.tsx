@@ -1447,6 +1447,9 @@ export default function ChatPage() {
 
       const baseStreamPath = `/sessions/${encodeURIComponent(selectedSessionId)}/messages/stream`;
       const streamParams = new URLSearchParams();
+      if (selectedBookIds.length > 0) {
+        streamParams.set('book_id', selectedBookIds.join(','));
+      }
       if (debugEnabled) {
         streamParams.set('debug', 'true');
       }
