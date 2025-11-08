@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -348,24 +349,30 @@ async def stream_session_message(
 
     async def _event_stream() -> AsyncIterator[str]:
         collected: list[str] = []
-        async for piece in _model_stream():
-            if not piece:
-                continue
-            collected.append(piece)
-            lines = piece.splitlines()
-            event_chunks: list[str] = []
-            if lines:
-                for line in lines:
-                    event_chunks.append(f"data: {line}\n")
-                if piece.endswith("\n"):
-                    event_chunks.append("data: \n")
-            else:
-                event_chunks.append("data: \n")
-            event_chunks.append("\n")
-            yield "".join(event_chunks)
-        final_text = "".join(collected).rstrip()
-        _append_message(session, "assistant", final_text)
-        yield "data: [DONE]\n\n"
+        error_message: str | None = None
+
+        try:
+            async for piece in _model_stream():
+                if not piece:
+                    continue
+                collected.append(piece)
+                chunk_payload = {"delta": piece, "done": False}
+                yield "data: " + json.dumps(chunk_payload, ensure_ascii=False) + "\n\n"
+        except Exception as exc:  # pragma: no cover - defensive
+            error_message = str(exc)
+            error_payload = {"error": error_message, "done": True}
+            yield "data: " + json.dumps(error_payload, ensure_ascii=False) + "\n\n"
+        else:
+            final_text = "".join(collected).strip()
+            _append_message(session, "assistant", final_text)
+            final_payload: dict[str, Any] = {
+                "answer": final_text,
+                "contexts": [],
+                "done": True,
+            }
+            yield "data: " + json.dumps(final_payload, ensure_ascii=False) + "\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
