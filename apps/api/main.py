@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar, cast
 
+from answering.citations import build_citations
 from limits import RateLimitItemPerSecond
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -79,12 +80,6 @@ configure_logging()
 
 log = structlog.get_logger(__name__)
 
-try:  # pragma: no cover - optional local backend
-    from backend import local_llm as _local_llm
-except Exception:  # pragma: no cover - dependency not available
-    _local_llm = None
-
-
 def _client_identifier(request: Request) -> str:
     headers = cast(Mapping[str, str], getattr(request, "headers", {}))
     forwarded = headers.get("x-forwarded-for")
@@ -135,7 +130,7 @@ class _GZipMiddleware(BaseHTTPMiddleware):
 app = FastAPI(title="KetabMind API")
 
 SESSION_CLEANUP_INTERVAL_SECONDS = 3600
-STREAMING_DELAY_SECONDS = 0.05
+_ARABIC_SCRIPT_RE = re.compile(r"[\u0600-\u06FF]")
 
 
 def _cleanup_expired_sessions_once() -> int:
@@ -369,60 +364,20 @@ def _safe_json_mapping(raw: str | None) -> dict[str, Any] | None:
         return dict(parsed)
     return None
 
-
-HistoryEntry = tuple[str, str]
-
-
-def _build_stream_prompt(history: list[HistoryEntry], include_context: bool) -> str:
-    """Construct a conversational prompt from the provided history."""
-
-    relevant = history if include_context else history[-1:]
-    if not relevant:
-        return "assistant:"
-    lines = [f"{role}: {content}" for role, content in relevant]
-    lines.append("assistant:")
-    return "\n".join(lines)
-
-
-def _compose_streamed_reply(history: list[HistoryEntry], payload: StreamMessageRequest) -> str:
-    """Return a deterministic simulated assistant answer."""
-
-    prior_messages = max(len(history) - 1, 0)
-    if not payload.context:
-        prior_messages = 0
-    model_label = "مدل محلی" if payload.model == "ollama" else "مدل ابری"
-    context_clause = ""
-    if prior_messages:
-        context_clause = f" پس از مرور {prior_messages} پیام قبلی"
-    elif payload.context:
-        context_clause = " با استفاده از گفت‌وگوی فعلی"
-    temperature_clause = ""
-    if payload.temperature is not None:
-        temperature_clause = f" مقدار دما {payload.temperature:.1f} تنظیم شده است."
-    user_prompt = payload.content.strip() or "پرسش"
-    return (
-        f"{model_label} KetabMind{context_clause} جمع‌بندی می‌کند که برای پرسش «{user_prompt}» "
-        f"مطالعه بخش‌های کلیدی کتاب و یادداشت‌برداری دقیق سودمند است.{temperature_clause}"
-    )
-
-
-async def _simulate_streaming_response(text: str) -> AsyncIterator[str]:
-    """Yield chunks of text with delays to mimic LLM streaming."""
-
-    words = text.split()
-    if not words:
-        return
-    for index, word in enumerate(words):
-        suffix = "" if index == len(words) - 1 else " "
-        await asyncio.sleep(STREAMING_DELAY_SECONDS)
-        yield f"{word}{suffix}"
-
-
-def _persist_assistant_message(session_id: int, owner_id: int, content: str) -> None:
+def _persist_assistant_message(
+    session_id: int,
+    owner_id: int,
+    content: str,
+    *,
+    citations: Sequence[str] | None = None,
+    meta: Mapping[str, Any] | None = None,
+) -> None:
     """Persist the assistant response for the provided session."""
 
     if not content:
         return
+    stored_citations = list(citations) if citations else None
+    stored_meta = dict(meta) if isinstance(meta, Mapping) else None
     with session_scope() as db_session:
         message_repo = repositories.MessageRepository(db_session, owner_id)
         try:
@@ -430,8 +385,8 @@ def _persist_assistant_message(session_id: int, owner_id: int, content: str) -> 
                 session_id=session_id,
                 role="assistant",
                 content=content,
-                citations=None,
-                meta=None,
+                citations=stored_citations,
+                meta=stored_meta,
             )
         except ValueError:  # pragma: no cover - session removed concurrently
             log.warning(
@@ -439,6 +394,71 @@ def _persist_assistant_message(session_id: int, owner_id: int, content: str) -> 
                 session_id=session_id,
                 owner_id=owner_id,
             )
+
+
+def _detect_message_language(text: str) -> str:
+    if text and _ARABIC_SCRIPT_RE.search(text):
+        return "fa"
+    return "en"
+
+
+def _average_context_confidence(contexts: Sequence[Mapping[str, Any]]) -> float:
+    scores: list[float] = []
+    for ctx in contexts:
+        if not isinstance(ctx, Mapping):
+            continue
+        value = ctx.get("hybrid")
+        try:
+            scores.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not scores:
+        return 0.0
+    return sum(scores) / len(scores)
+
+
+def _build_message_citations(contexts: Sequence[Mapping[str, Any]]) -> list[str]:
+    normalized: list[dict[str, Any]] = []
+    for ctx in contexts:
+        if isinstance(ctx, Mapping):
+            normalized.append({**ctx})
+    if not normalized:
+        return []
+    return build_citations(normalized, "[${book_id}:${page_range}]")
+
+
+def _derive_message_meta(
+    answer: str,
+    contexts: Sequence[Mapping[str, Any]],
+    meta: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if isinstance(meta, Mapping):
+        payload.update(meta)
+
+    lang = payload.get("lang")
+    if not isinstance(lang, str) or not lang:
+        payload["lang"] = _detect_message_language(answer)
+
+    coverage_value = payload.get("coverage")
+    if coverage_value is None:
+        payload["coverage"] = 0.0
+    else:
+        try:
+            payload["coverage"] = float(coverage_value)
+        except (TypeError, ValueError):
+            payload["coverage"] = 0.0
+
+    confidence_value = payload.get("confidence")
+    if confidence_value is None:
+        payload["confidence"] = _average_context_confidence(contexts)
+    else:
+        try:
+            payload["confidence"] = float(confidence_value)
+        except (TypeError, ValueError):
+            payload["confidence"] = _average_context_confidence(contexts)
+
+    return payload
 
 
 def _serialize_message(message: models.Message) -> dict[str, Any]:
@@ -1450,8 +1470,18 @@ async def stream_session_message(
 
     session_pk = _parse_identifier(session_id, field="session_id")
     book_ids = _split_book_filter(book_id)
-    log.info("chat.stream.request", session_id=session_id, book_ids=book_ids)
-    include_context = bool(payload.context)
+    book_filter = book_ids[0] if book_ids else None
+    log.info(
+        "chat.stream.request",
+        session_id=session_id,
+        book_ids=book_ids,
+        model=payload.model,
+    )
+
+    question = (payload.content or "").strip()
+    session_db_id: int | None = None
+    owner_id: int | None = None
+
     with session_scope() as db_session:
         owner = _ensure_owner(db_session, current_user)
         session_repo = repositories.SessionRepository(db_session, owner.id)
@@ -1459,55 +1489,121 @@ async def stream_session_message(
         if session_obj is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
         message_repo = repositories.MessageRepository(db_session, owner.id)
-        user_message = message_repo.create(
-            session_id=session_obj.id,
-            role="user",
-            content=payload.content,
-            citations=None,
-            meta=None,
-        )
-        db_session.refresh(user_message)
         history_records = message_repo.list_for_session(session_obj.id)
-        history: list[HistoryEntry] = [
-            (record.role, record.content or "") for record in history_records
-        ]
+        latest_user = next(
+            (record for record in reversed(history_records) if record.role == "user"),
+            None,
+        )
+        if latest_user and latest_user.content:
+            question = latest_user.content.strip()
         session_db_id = session_obj.id
         owner_id = owner.id
 
-    prompt = _build_stream_prompt(history, include_context)
+    if not question:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "User message content is required")
 
-    async def _model_stream() -> AsyncIterator[str]:
-        if payload.model == "ollama" and _local_llm is not None:
-            stream_fn = getattr(_local_llm, "generate_stream", None)
-            if callable(stream_fn):
-                async for chunk in stream_fn(prompt, model=payload.model):
-                    if chunk:
-                        yield chunk
-                return
-        response_text = _compose_streamed_reply(history, payload)
-        async for chunk in _simulate_streaming_response(response_text):
-            yield chunk
+    if session_db_id is None or owner_id is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Unable to load session")
+
+    log.info(
+        "chat.stream.start",
+        session_id=session_id,
+        book_id=book_filter,
+    )
 
     async def _event_stream() -> AsyncIterator[str]:
-        collected: list[str] = []
-        async for piece in _model_stream():
-            if not piece:
-                continue
-            collected.append(piece)
-            lines = piece.splitlines()
-            event_chunks: list[str] = []
-            if lines:
-                for line in lines:
-                    event_chunks.append(f"data: {line}\n")
-                if piece.endswith("\n"):
-                    event_chunks.append("data: \n")
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        final_answer: str | None = None
+        final_contexts: list[dict[str, Any]] = []
+        final_meta: dict[str, Any] | None = None
+        error_message: str | None = None
+        cancelled = False
+
+        def _produce() -> None:
+            try:
+                for chunk in stream_answer(question, book_id=book_filter):
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
+            except Exception as exc:  # pragma: no cover - defensive
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
             else:
-                event_chunks.append("data: \n")
-            event_chunks.append("\n")
-            yield "".join(event_chunks)
-        final_text = "".join(collected).strip()
-        _persist_assistant_message(session_db_id, owner_id, final_text)
-        yield "data: [DONE]\n\n"
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+
+        producer_task = asyncio.create_task(asyncio.to_thread(_produce))
+
+        try:
+            while True:
+                kind, item = await queue.get()
+                if kind == "chunk":
+                    chunk = cast(dict[str, Any], item)
+                    delta = chunk.get("delta")
+                    if isinstance(delta, str) and delta:
+                        yield "data: " + json.dumps({"delta": delta}, ensure_ascii=False) + "\n\n"
+                        continue
+                    if "answer" not in chunk:
+                        continue
+                    final_answer = str(chunk.get("answer") or "")
+                    raw_contexts = chunk.get("contexts") or []
+                    final_contexts = [
+                        dict(ctx)
+                        for ctx in raw_contexts
+                        if isinstance(ctx, Mapping)
+                    ]
+                    raw_meta = chunk.get("meta")
+                    final_meta = _derive_message_meta(
+                        final_answer,
+                        final_contexts,
+                        raw_meta if isinstance(raw_meta, Mapping) else None,
+                    )
+                    data: dict[str, Any] = {
+                        "answer": final_answer,
+                        "contexts": final_contexts,
+                    }
+                    if final_meta:
+                        data["meta"] = final_meta
+                    debug_payload = chunk.get("debug")
+                    if debug_payload is not None:
+                        data["debug"] = debug_payload
+                    yield "data: " + json.dumps(data, ensure_ascii=False) + "\n\n"
+                elif kind == "error":
+                    error_message = str(item)
+                    log.warning(
+                        "chat.stream.error",
+                        session_id=session_id,
+                        error=error_message,
+                    )
+                    yield "data: " + json.dumps({"error": error_message}, ensure_ascii=False) + "\n\n"
+                    break
+                elif kind == "done":
+                    break
+        except asyncio.CancelledError:  # pragma: no cover - client cancelled
+            cancelled = True
+            log.info("chat.stream.cancelled", session_id=session_id)
+        finally:
+            await producer_task
+
+        if not cancelled and error_message is None and final_answer is not None:
+            citations = _build_message_citations(final_contexts)
+            _persist_assistant_message(
+                session_db_id,
+                owner_id,
+                final_answer,
+                citations=citations,
+                meta=final_meta,
+            )
+            log.info(
+                "chat.stream.persisted",
+                session_id=session_id,
+                citation_count=len(citations),
+            )
+
+        if not cancelled:
+            yield "data: [DONE]\n\n"
+            log.info(
+                "chat.stream.complete",
+                session_id=session_id,
+                error=error_message,
+            )
 
     return StreamingResponse(_event_stream(), media_type="text/event-stream")
 

@@ -141,12 +141,12 @@ def _refusal_rule() -> str:
     return (_get_env("ANSWER_REFUSAL_RULE") or DEFAULT_REFUSAL_RULE).strip()
 
 
-def answer(query: str, top_k: int = 8) -> dict[str, Any]:
+def answer(query: str, top_k: int = 8, *, book_id: str | None = None) -> dict[str, Any]:
     config = _load_config()
-    contexts = _retriever.retrieve(query, top_k)
+    contexts = _retriever.retrieve(query, top_k=top_k, book_id=book_id)
     if not any(c.text.strip() for c in contexts):
         follow_up = f"{query} explain further"
-        contexts = _retriever.retrieve(follow_up, top_k)
+        contexts = _retriever.retrieve(follow_up, top_k=top_k, book_id=book_id)
     selected_contexts = select_contexts_within_budget(
         query,
         contexts,
@@ -197,14 +197,19 @@ def answer(query: str, top_k: int = 8) -> dict[str, Any]:
     }
 
 
-def stream_answer(query: str, top_k: int = 8) -> Iterable[dict[str, Any]]:
+def stream_answer(
+    query: str,
+    top_k: int = 8,
+    *,
+    book_id: str | None = None,
+) -> Iterable[dict[str, Any]]:
     """Yield incremental answer tokens followed by final result."""
 
     config = _load_config()
-    contexts = _retriever.retrieve(query, top_k)
+    contexts = _retriever.retrieve(query, top_k=top_k, book_id=book_id)
     if not any(c.text.strip() for c in contexts):
         follow_up = f"{query} explain further"
-        contexts = _retriever.retrieve(follow_up, top_k)
+        contexts = _retriever.retrieve(follow_up, top_k=top_k, book_id=book_id)
     selected_contexts = select_contexts_within_budget(
         query,
         contexts,
@@ -215,15 +220,53 @@ def stream_answer(query: str, top_k: int = 8) -> Iterable[dict[str, Any]]:
     prompt = _prepare_prompt(query, selected_contexts, config)
     llm: LLM = get_llm()
     stream_result = llm.generate(prompt, stream=True)
+    language = _detect_language(query)
+
+    def _final_payload(answer_text: str) -> dict[str, Any]:
+        final_answer = ensure_stop_sequences(answer_text, config.stop_sequences)
+        coverage = citation_coverage(final_answer, selected_contexts)
+        confidence = _average_hybrid(selected_contexts)
+        est_input_tokens = estimate_token_count(
+            [query, *(ctx.text for ctx in selected_contexts)],
+            config.tokenizer_name,
+        )
+        debug_payload = {
+            "prompt": prompt,
+            "backend": config.backend,
+            "model": config.model,
+            "tokenizer": config.tokenizer_name,
+            "max_input_tokens": config.max_input_tokens,
+            "max_new_tokens": config.max_new_tokens,
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+            "stats": {
+                "total_contexts": len(contexts),
+                "used_contexts": len(selected_contexts),
+                "est_input_tokens": est_input_tokens,
+                "coverage": coverage,
+                "confidence": confidence,
+            },
+        }
+        return {
+            "answer": final_answer,
+            "contexts": serialized_contexts,
+            "meta": {
+                "lang": language,
+                "coverage": coverage,
+                "confidence": confidence,
+            },
+            "debug": debug_payload,
+        }
+
     if isinstance(stream_result, str):
         buffered = ensure_stop_sequences(stream_result, config.stop_sequences)
         if buffered:
             yield {"delta": buffered}
-        yield {"answer": buffered, "contexts": serialized_contexts}
+        yield _final_payload(buffered)
         return
     collected: list[str] = []
     for delta in stream_result:
         collected.append(delta)
         yield {"delta": delta}
-    final_answer = ensure_stop_sequences("".join(collected), config.stop_sequences)
-    yield {"answer": final_answer, "contexts": serialized_contexts}
+    final_answer = "".join(collected)
+    yield _final_payload(final_answer)
