@@ -38,6 +38,7 @@ from starlette.types import ASGIApp
 import structlog
 from apps.api.auth import authenticate_user, create_access_token, get_current_user, get_user_profile
 from apps.api.db import models, repositories
+from apps.api.db.init import init_db
 from apps.api.db.session import session_scope
 from apps.api.middleware import RequestIDMiddleware
 from apps.api.routes.books import router as books_router
@@ -131,6 +132,10 @@ class _GZipMiddleware(BaseHTTPMiddleware):
 
 
 app = FastAPI(title="KetabMind API")
+
+@app.on_event("startup")
+async def _startup_initialize_database() -> None:
+    init_db()
 
 SESSION_CLEANUP_INTERVAL_SECONDS = 3600
 _ARABIC_SCRIPT_RE = re.compile(r"[\u0600-\u06FF]")
