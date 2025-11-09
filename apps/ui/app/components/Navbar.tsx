@@ -26,6 +26,7 @@ export default function Navbar() {
       </div>
       <nav className="navbar__links">
         <Link href="/chat">Chat</Link>
+        <Link href="/books">Books</Link>
         <Link href="/upload">Upload</Link>
       </nav>
       <div className="navbar__spacer" />
