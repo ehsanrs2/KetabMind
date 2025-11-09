@@ -40,6 +40,7 @@ from apps.api.auth import authenticate_user, create_access_token, get_current_us
 from apps.api.db import models, repositories
 from apps.api.db.session import session_scope
 from apps.api.middleware import RequestIDMiddleware
+from apps.api.routes.books import router as books_router
 from apps.api.routes.query import build_query_response
 from apps.api.schemas import (
     BookmarkCreate,
@@ -51,6 +52,8 @@ from apps.api.schemas import (
     SessionUpdate,
     StreamMessageRequest,
 )
+from apps.api.services.books import ensure_book_record
+from apps.api.services.users import ensure_owner
 from core.answer.answerer import answer, stream_answer
 from core.answer.llm import LLMError, LLMTimeoutError, get_llm
 from core.config import settings
@@ -197,6 +200,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(books_router)
 
 
 @app.on_event("startup")
@@ -515,25 +520,6 @@ def _serialize_bookmark(bookmark: models.Bookmark) -> dict[str, Any]:
         ),
         "message": _serialize_message(message_obj) if message_obj else None,
     }
-
-
-def _ensure_owner(db_session, user_profile: Mapping[str, Any]) -> models.User:
-    email = user_profile.get("email")
-    if not isinstance(email, str) or not email:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
-    normalized_email = email.strip().lower()
-    repo = repositories.UserRepository(db_session)
-    user = repo.get_by_email(normalized_email)
-    if user is None:
-        name = user_profile.get("name")
-        user = repo.create(email=normalized_email, name=str(name) if name else None)
-    else:
-        name = user_profile.get("name")
-        if isinstance(name, str) and name and name != (user.name or ""):
-            user.name = name
-    return user
-
-
 @app.middleware("http")
 async def _metrics_middleware(request: Request, call_next: Callable[[Request], Any]) -> Response:
     path = request.url.path
@@ -643,17 +629,6 @@ def _is_newer_version(candidate: str | None, current: str | None) -> bool:
     if not current:
         return True
     return candidate > current
-
-
-def _book_title_from_meta(meta: Mapping[str, Any] | None, fallback: str) -> str:
-    if isinstance(meta, Mapping):
-        for key in ("title", "subject", "author"):
-            value = meta.get(key)
-            if isinstance(value, str):
-                title = value.strip()
-                if title:
-                    return title
-    return fallback
 
 
 def _split_book_filter(book_id: str | None) -> list[str]:
@@ -856,60 +831,6 @@ def ready() -> dict[str, str]:
     return {"status": "ready"}
 
 
-@_get("/books")
-def list_books(
-    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
-) -> dict[str, Any]:
-    owner_id = str(current_user.get("id") or "")
-    if not owner_id:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
-    collection = settings.qdrant_collection
-    try:
-        indexed_files = _list_indexed_files(collection)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        log.warning("books.list_failed", error=str(exc), exc_info=True)
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to load books"
-        ) from exc
-    latest_by_book: dict[str, IndexedFileType] = {}
-    for entry in indexed_files:
-        book_id = str(getattr(entry, "book_id", "") or "")
-        if not book_id:
-            continue
-        existing = latest_by_book.get(book_id)
-        if existing is None or _is_newer_version(
-            getattr(entry, "version", None), getattr(existing, "version", None)
-        ):
-            latest_by_book[book_id] = entry
-    root = _ensure_upload_root()
-    owner_dir = root / owner_id
-    if not owner_dir.exists():
-        return {"books": []}
-    directories = sorted(
-        (p for p in owner_dir.iterdir() if p.is_dir()), key=lambda path: path.name.lower()
-    )
-    books: list[dict[str, Any]] = []
-    for book_path in directories:
-        book_id = book_path.name
-        entry = latest_by_book.get(book_id)
-        raw_meta = getattr(entry, "metadata", None) if entry is not None else None
-        metadata = dict(raw_meta) if isinstance(raw_meta, Mapping) else None
-        version = getattr(entry, "version", None) if entry is not None else None
-        file_hash = getattr(entry, "file_hash", None) if entry is not None else None
-        indexed_chunks = getattr(entry, "indexed_chunks", None) if entry is not None else None
-        books.append(
-            {
-                "book_id": book_id,
-                "title": _book_title_from_meta(metadata, book_id),
-                "metadata": metadata,
-                "version": version,
-                "file_hash": file_hash,
-                "indexed_chunks": indexed_chunks,
-            }
-        )
-    return {"books": books}
-
-
 def _csrf_headers(request: Request) -> dict[str, str]:
     token = request.cookies.get("access_token") if hasattr(request, "cookies") else None
     if isinstance(token, str) and token:
@@ -1080,9 +1001,10 @@ def index(
         if not path.exists():
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"File not found: {path}")
         file_hash = sha256_file(path)
+        metadata_payload = req.metadata()
         existing = _find_indexed_file(collection, file_hash)
         if existing:
-            return {
+            response_payload = {
                 "new": 0,
                 "skipped": existing.indexed_chunks,
                 "collection": collection,
@@ -1091,15 +1013,35 @@ def index(
                 "file_hash": existing.file_hash,
                 "indexed_chunks": existing.indexed_chunks,
             }
+            metadata_source: Mapping[str, Any] | None = metadata_payload or existing.metadata
+            with session_scope() as db_session:
+                owner = ensure_owner(db_session, _user)
+                ensure_book_record(
+                    db_session,
+                    owner,
+                    book_id=existing.book_id,
+                    metadata=metadata_source,
+                    title_fallback=existing.book_id,
+                )
+            return response_payload
         try:
             result = _index_path(
                 path,
                 collection=collection,
                 file_hash=file_hash,
-                metadata=req.metadata(),
+                metadata=metadata_payload,
             )
         except SystemExit as exc:  # invalid path or type
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        with session_scope() as db_session:
+            owner = ensure_owner(db_session, _user)
+            ensure_book_record(
+                db_session,
+                owner,
+                book_id=result.book_id,
+                metadata=metadata_payload,
+                title_fallback=result.book_id,
+            )
         return _serialize_index_result(result)
 
     if not req.file_hash:
@@ -1153,6 +1095,16 @@ def index(
     except SystemExit as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    with session_scope() as db_session:
+        owner = ensure_owner(db_session, _user)
+        ensure_book_record(
+            db_session,
+            owner,
+            book_id=existing.book_id,
+            metadata=meta_arg,
+            title_fallback=existing.book_id,
+        )
+
     return _serialize_index_result(result)
 
 
@@ -1178,6 +1130,7 @@ async def upload(
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid user profile")
     meta_payload = meta.as_dict()
     response_payload: dict[str, Any]
+    book_id: str
     try:
         collection = settings.qdrant_collection
         file_hash = sha256_file(tmp_path)
@@ -1220,6 +1173,24 @@ async def upload(
     finally:
         with suppress(FileNotFoundError):
             tmp_path.unlink()
+
+    metadata_source: Mapping[str, Any] | None
+    if meta_payload:
+        metadata_source = meta_payload
+    elif existing and isinstance(existing.metadata, Mapping):
+        metadata_source = existing.metadata
+    else:
+        metadata_source = None
+
+    with session_scope() as db_session:
+        owner = ensure_owner(db_session, _user)
+        ensure_book_record(
+            db_session,
+            owner,
+            book_id=book_id,
+            metadata=metadata_source,
+            title_fallback=book_id,
+        )
 
     return response_payload
 
@@ -1286,7 +1257,7 @@ def bookmarks(
     if target_id != current_user["id"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         repo = repositories.BookmarkRepository(db_session, owner.id)
         filter_tag = (tag or "").strip() or None
         records = repo.list(tag=filter_tag)
@@ -1300,7 +1271,7 @@ def create_bookmark(
     current_user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, Any]:
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         repo = repositories.BookmarkRepository(db_session, owner.id)
         message_id = _parse_identifier(payload.message_id, field="message_id")
         tag_value = (payload.tag or "").strip() or None
@@ -1323,7 +1294,7 @@ def delete_bookmark(
 ) -> Response:
     bookmark_pk = _parse_identifier(bookmark_id, field="bookmark_id")
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         repo = repositories.BookmarkRepository(db_session, owner.id)
         if not repo.delete(bookmark_pk):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Bookmark not found")
@@ -1341,7 +1312,7 @@ def sessions(
     if target_id != current_user["id"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         repo = repositories.SessionRepository(db_session, owner.id)
         allowed_sorts = {"date_desc", "date_asc", "title_asc", "title_desc"}
         sort_key = (sort or "date_desc").strip().lower()
@@ -1363,7 +1334,7 @@ def delete_session(
 ) -> Response:
     session_pk = _parse_identifier(session_id, field="session_id")
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         repo = repositories.SessionRepository(db_session, owner.id)
         if not repo.soft_delete(session_pk):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
@@ -1376,7 +1347,7 @@ def create_session(
     current_user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, Any]:
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         repo = repositories.SessionRepository(db_session, owner.id)
         title = (payload.title or "New session").strip() or "New session"
         book_id: int | None = None
@@ -1401,7 +1372,7 @@ def update_session(
     if not new_title:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Title is required")
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         session_repo = repositories.SessionRepository(db_session, owner.id)
         record = session_repo.rename(session_pk, new_title)
         if record is None:
@@ -1417,7 +1388,7 @@ def session_messages(
 ) -> dict[str, Any]:
     session_pk = _parse_identifier(session_id, field="session_id")
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         session_repo = repositories.SessionRepository(db_session, owner.id)
         session_obj = session_repo.get(session_pk)
         if session_obj is None:
@@ -1439,7 +1410,7 @@ def create_session_message(
     if role not in {"assistant", "user", "system"}:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid message role")
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         session_repo = repositories.SessionRepository(db_session, owner.id)
         session_obj = session_repo.get(session_pk)
         if session_obj is None:
@@ -1483,7 +1454,7 @@ async def stream_session_message(
     owner_id: int | None = None
 
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         session_repo = repositories.SessionRepository(db_session, owner.id)
         session_obj = session_repo.get(session_pk)
         if session_obj is None:
@@ -1620,7 +1591,7 @@ def export_message(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported export format")
 
     with session_scope() as db_session:
-        owner = _ensure_owner(db_session, current_user)
+        owner = ensure_owner(db_session, current_user)
         message_repo = repositories.MessageRepository(db_session, owner.id)
         message_obj = message_repo.get(message_pk)
         if message_obj is None:

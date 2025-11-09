@@ -284,6 +284,117 @@ class VectorStore:
         )
         self.delete_by_filter(filter_payload)
 
+    def update_book_metadata(self, book_id: str, metadata: Mapping[str, Any]) -> int:
+        updates = {
+            str(key): value
+            for key, value in metadata.items()
+            if value not in (None, "", [], {})
+        }
+        if not updates:
+            return 0
+
+        filter_payload = rest.Filter(
+            must=[
+                rest.FieldCondition(
+                    key="book_id",
+                    match=rest.MatchValue(value=book_id),
+                )
+            ]
+        )
+
+        updated = 0
+        support_set_payload = hasattr(self.client, "set_payload")
+        offset: rest.ExtendedPointId | None = None
+        while True:
+            try:
+                kwargs: dict[str, Any] = {
+                    "collection_name": self.collection,
+                    "limit": 128,
+                    "with_payload": True,
+                    "with_vectors": not support_set_payload,
+                    "scroll_filter": filter_payload,
+                }
+                if offset is not None:
+                    kwargs["offset"] = offset
+                points, offset = self.client.scroll(**kwargs)
+            except TypeError:
+                kwargs.pop("scroll_filter", None)
+                kwargs["filter"] = filter_payload
+                points, offset = self.client.scroll(**kwargs)
+            if not points:
+                break
+            for point in points:
+                payload = dict(point.payload or {})
+                meta = payload.get("meta")
+                merged: dict[str, Any] = {}
+                if isinstance(meta, Mapping):
+                    merged.update({str(k): v for k, v in meta.items()})
+                merged.update(updates)
+                try:
+                    if support_set_payload:
+                        self.client.set_payload(
+                            collection_name=self.collection,
+                            payload={"meta": merged},
+                            points=[str(point.id)],
+                            wait=True,
+                        )
+                    else:
+                        vector_data = getattr(point, "vector", None)
+                        vector_values = None
+                        if isinstance(vector_data, Mapping):
+                            vector_values = next(iter(vector_data.values()), None)
+                        elif vector_data is not None:
+                            vector_values = vector_data
+                        else:
+                            vectors_map = getattr(point, "vectors", None)
+                            if isinstance(vectors_map, Mapping):
+                                vector_values = next(iter(vectors_map.values()), None)
+                        if vector_values is None:
+                            retrieved = self.client.retrieve(
+                                collection_name=self.collection,
+                                ids=[str(point.id)],
+                                with_payload=True,
+                                with_vectors=True,
+                            )
+                            if retrieved:
+                                vector_data = getattr(retrieved[0], "vector", None)
+                                if isinstance(vector_data, Mapping):
+                                    vector_values = next(iter(vector_data.values()), None)
+                                elif vector_data is not None:
+                                    vector_values = vector_data
+                                else:
+                                    vectors_map = getattr(retrieved[0], "vectors", None)
+                                    if isinstance(vectors_map, Mapping):
+                                        vector_values = next(iter(vectors_map.values()), None)
+                        if vector_values is None:
+                            continue
+                        if isinstance(vector_values, Mapping):
+                            vector_payload = next(iter(vector_values.values()), None)
+                        else:
+                            vector_payload = vector_values
+                        if hasattr(vector_payload, "tolist"):
+                            vector_payload = vector_payload.tolist()
+                        if isinstance(vector_payload, tuple):
+                            vector_payload = list(vector_payload)
+                        payload["meta"] = merged
+                        self.upsert(
+                            ids=[str(point.id)],
+                            vectors=[vector_payload],
+                            payloads=[payload],
+                        )
+                    updated += 1
+                except Exception:
+                    log.warning(
+                        "vector.update_metadata_failed",
+                        book_id=book_id,
+                        point_id=str(point.id),
+                        exc_info=True,
+                    )
+                    continue
+            if offset is None:
+                break
+        return updated
+
     def _normalize_ids(self, ids: Iterable[str]) -> list[str]:
         out: list[str] = []
         for i in ids:
