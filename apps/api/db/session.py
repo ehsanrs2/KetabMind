@@ -10,8 +10,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from core.config import settings
 
-_engine = create_engine(settings.database_url, future=True)
-SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False, autoflush=False)
+engine = create_engine(settings.database_url, future=True)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+# Backwards compatibility for modules/tests still importing _engine directly.
+_engine = engine
 
 
 @contextmanager
@@ -29,4 +32,4 @@ def session_scope() -> Iterator[Session]:
         session.close()
 
 
-__all__ = ["SessionLocal", "session_scope", "_engine"]
+__all__ = ["SessionLocal", "session_scope", "engine", "_engine"]
