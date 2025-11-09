@@ -62,11 +62,53 @@ class BookRepository(_BaseRepository):
         )
         return self._one(stmt)
 
-    def create(self, *, title: str, description: str | None = None) -> models.Book:
-        book = models.Book(title=title, description=description, owner_id=self.owner_id)
+    def get_by_vector_id(self, vector_id: str) -> models.Book | None:
+        stmt = select(models.Book).where(
+            models.Book.vector_id == vector_id, models.Book.owner_id == self.owner_id
+        )
+        return self._one(stmt)
+
+    def create(
+        self,
+        *,
+        title: str,
+        description: str | None = None,
+        vector_id: str | None = None,
+    ) -> models.Book:
+        book = models.Book(
+            title=title,
+            description=description,
+            owner_id=self.owner_id,
+            vector_id=vector_id,
+        )
         self.session.add(book)
         self.session.flush()
         return book
+
+    def rename(
+        self,
+        vector_id: str,
+        *,
+        title: str,
+        description: str | None = None,
+    ) -> models.Book | None:
+        record = self.get_by_vector_id(vector_id)
+        if record is None:
+            return None
+        record.title = title
+        if description is not None:
+            record.description = description
+        self.session.add(record)
+        self.session.flush()
+        return record
+
+    def delete_by_vector_id(self, vector_id: str) -> models.Book | None:
+        record = self.get_by_vector_id(vector_id)
+        if record is None:
+            return None
+        self.session.delete(record)
+        self.session.flush()
+        return record
 
 
 class BookVersionRepository(_BaseRepository):

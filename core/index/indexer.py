@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from contextlib import suppress
+
 import numpy as np
 
 import structlog
@@ -396,6 +398,55 @@ def update_indexed_file_path(collection: str, file_hash: str, path: Path) -> Non
         return
     entry["path"] = str(path)
     _save_manifest(manifest)
+
+
+def update_indexed_book_metadata(
+    collection: str,
+    book_id: str,
+    metadata: Mapping[str, Any] | None,
+) -> None:
+    """Merge updated metadata for a given book into the manifest."""
+
+    normalized = _clean_metadata(metadata)
+    if not normalized:
+        return
+
+    manifest = _load_manifest()
+    updated = False
+    for entry in manifest.values():
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("book_id") or "") != book_id:
+            continue
+        merged: dict[str, Any] = {}
+        current_meta = entry.get("meta")
+        if isinstance(current_meta, Mapping):
+            merged.update({str(k): v for k, v in current_meta.items()})
+        merged.update(normalized)
+        entry["meta"] = merged
+        updated = True
+    if updated:
+        _save_manifest(manifest)
+
+
+def remove_indexed_book(collection: str, book_id: str) -> None:
+    """Remove manifest entries and cached files for the specified book."""
+
+    manifest = _load_manifest()
+    removed = False
+    for key, entry in list(manifest.items()):
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("book_id") or "") != book_id:
+            continue
+        manifest.pop(key, None)
+        removed = True
+    if removed:
+        _save_manifest(manifest)
+
+    jsonl_path = _jsonl_path(book_id)
+    with suppress(FileNotFoundError):
+        jsonl_path.unlink()
 
 
 def list_indexed_files(collection: str | None = None) -> list[IndexedFile]:

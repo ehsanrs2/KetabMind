@@ -46,6 +46,11 @@ class IndexRequest(BaseModel):  # type: ignore[misc]
         return meta.as_dict()
 
 
+class BookRenameRequest(BaseModel):  # type: ignore[misc]
+    title: str
+    description: str | None = None
+
+
 class MessageCreate(BaseModel):  # type: ignore[misc]
     role: str
     content: str

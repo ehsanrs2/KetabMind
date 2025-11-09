@@ -68,6 +68,22 @@ curl -X POST "http://localhost:8000/query" \
   -d '{"q": "Summarize chapter 3", "top_k": 5}'
 ```
 
+Book Management API
+-------------------
+
+- `GET /books` – Returns a paginated list of indexed books for the current user. Each entry
+  includes the database identifier, vector-store status, version/hash metadata, and timestamps.
+- `GET /books/{book_id}` – Fetches detailed metadata for a single book, combining relational
+  data with the most recent index manifest entry.
+- `PATCH /books/{book_id}/rename` – Updates the stored title (and optional description) while
+  propagating the new title to the Qdrant payloads and manifest, ensuring search results reflect
+  the change immediately.
+- `DELETE /books/{book_id}` – Removes the book from the relational database, deletes the
+  associated Qdrant points, clears manifest/JSONL artifacts, and prunes the uploaded files.
+
+These endpoints keep the primary database and vector store synchronized so that administrative
+actions are immediately reflected in retrieval and audit workflows.
+
 Phase 1 – Ingestion & Normalization
 -----------------------------------
 

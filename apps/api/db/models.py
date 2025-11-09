@@ -42,6 +42,7 @@ class Book(TimestampMixin, Base):
     __tablename__ = "books"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vector_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_id: Mapped[int] = mapped_column(
