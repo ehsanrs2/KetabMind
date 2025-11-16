@@ -16,3 +16,4 @@ node_modules/
 
 !data/qdrant/
 !data/qdrant/.gitkeep
+/data/*.db
