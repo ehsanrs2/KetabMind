@@ -862,7 +862,7 @@ export default function ChatPage() {
     setIsLoadingBooks(true);
     setBooksError(null);
     try {
-      const response = await fetch('/books', {
+      const response = await fetch('/api/books', {
         credentials: 'include',
       });
       if (!response.ok) {
