@@ -63,7 +63,7 @@ function parseXhrResponse(xhr: XMLHttpRequest): UploadResponse | null {
   }
 
   try {
-    return JSON.parse(raw) as UploadResponse;
+    return JSON.parse(text) as UploadResponse;
   } catch (error) {
     console.warn('Failed to parse upload response', error);
     const fallback = text.trim();
