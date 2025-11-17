@@ -117,6 +117,7 @@ type BookRecord = {
 
 type BooksResponse = {
   books?: Array<{
+    id?: string | number | null;
     book_id?: string | number | null;
     bookId?: string | number | null;
     title?: string | null;
@@ -568,7 +569,7 @@ function normaliseBook(item: BooksResponse['books'][number]): BookRecord | null 
   if (!item) {
     return null;
   }
-  const bookIdRaw = item.book_id ?? item.bookId;
+  const bookIdRaw = item.book_id ?? item.bookId ?? item.id;
   if (bookIdRaw === null || bookIdRaw === undefined) {
     return null;
   }
