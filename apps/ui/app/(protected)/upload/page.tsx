@@ -16,6 +16,8 @@ type UploadResponse = {
   version?: number | string;
   file_hash?: string;
   path?: string;
+  vector_id?: string | null;
+  is_indexed?: boolean | null;
   meta?: UploadMetadata;
   indexed_chunks?: number;
   message?: string;
@@ -175,6 +177,18 @@ export default function UploadPage() {
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexStatus, setIndexStatus] = useState<IndexStatusState>(null);
 
+  const alreadyIndexed = useMemo(
+    () => Boolean(uploadResponse?.is_indexed || uploadResponse?.vector_id),
+    [uploadResponse?.is_indexed, uploadResponse?.vector_id],
+  );
+
+  const canTriggerIndex = useMemo(() => {
+    const chunkCount = Number(uploadResponse?.indexed_chunks ?? 0);
+    const hasChunks = Number.isFinite(chunkCount) && chunkCount > 0;
+    const hasIdentifier = Boolean(uploadResponse?.path || uploadResponse?.book_id);
+    return hasChunks && hasIdentifier && Boolean(uploadResponse?.file_hash) && !alreadyIndexed;
+  }, [alreadyIndexed, uploadResponse?.book_id, uploadResponse?.file_hash, uploadResponse?.indexed_chunks, uploadResponse?.path]);
+
   const handleInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
     setFormValues((previous) => ({ ...previous, [name]: value }));
@@ -275,7 +289,26 @@ export default function UploadPage() {
       return;
     }
 
-    if (!uploadResponse.file_hash) {
+    if (alreadyIndexed) {
+      setIndexStatus({
+        type: 'error',
+        message: 'This book is already indexed.',
+      });
+      return;
+    }
+
+    const indexPayload = {
+      path: uploadResponse.path,
+      collection: undefined,
+      author: uploadResponse.meta?.author,
+      year: uploadResponse.meta?.year,
+      subject: uploadResponse.meta?.subject,
+      title: uploadResponse.meta?.title,
+      book_id: uploadResponse.book_id,
+      file_hash: uploadResponse.file_hash,
+    };
+
+    if (!indexPayload.file_hash) {
       setIndexStatus({
         type: 'error',
         message: 'Unable to trigger indexing: missing file hash.',
@@ -348,7 +381,7 @@ export default function UploadPage() {
     } finally {
       setIsIndexing(false);
     }
-  }, [csrfToken, uploadResponse]);
+  }, [alreadyIndexed, csrfToken, uploadResponse]);
 
   const clampedProgress = progress === null ? 0 : Math.min(100, Math.max(0, progress));
   const progressFillStyle = useMemo(
@@ -481,7 +514,7 @@ export default function UploadPage() {
               </div>
             ) : null}
           </dl>
-          <button type="button" onClick={handleIndexNow} disabled={isIndexing || !uploadResponse?.path}>
+          <button type="button" onClick={handleIndexNow} disabled={isIndexing || !canTriggerIndex}>
             {isIndexing ? 'Indexing…' : 'Index now'}
           </button>
           {indexStatus && (

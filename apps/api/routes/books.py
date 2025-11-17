@@ -67,6 +67,8 @@ def _serialize_book(record: models.Book, index_entry: Any | None) -> dict[str, A
     return {
         "id": record.vector_id,
         "db_id": record.id,
+        "vector_id": record.vector_id,
+        "is_indexed": index_entry is not None or bool(record.vector_id),
         "title": record.title,
         "description": record.description,
         "created_at": _isoformat(record.created_at),
