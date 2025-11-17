@@ -3,6 +3,8 @@ export type BookMetadata = Record<string, unknown> | null | undefined;
 export type BookRecord = {
   id: string;
   db_id?: number | string | null;
+  vector_id?: string | null;
+  is_indexed?: boolean | null;
   title: string;
   description?: string | null;
   created_at?: string | null;
