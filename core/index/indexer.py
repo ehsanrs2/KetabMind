@@ -72,6 +72,44 @@ def _new_version() -> str:
     return now.strftime("v%Y%m%d%H%M%S%f")
 
 
+def _has_indexed_vectors(collection: str, file_hash: str) -> bool:
+    try:
+        with VectorStore(
+            mode=settings.qdrant_mode,
+            location=settings.qdrant_location,
+            url=settings.qdrant_url,
+            collection=collection,
+            vector_size=None,
+            ensure_collection=False,
+        ) as store:
+            hits, _ = store.client.scroll(
+                collection_name=collection,
+                scroll_filter=rest.Filter(
+                    must=[
+                        rest.FieldCondition(
+                            key="file_hash",
+                            match=rest.MatchValue(value=file_hash),
+                        )
+                    ]
+                ),
+                with_payload=False,
+                limit=1,
+            )
+            return bool(hits)
+    except ValueError as exc:
+        if "not found" in str(exc).lower():
+            return False
+        raise
+    except Exception:
+        log.warning(
+            "indexer.check_existing_vectors_failed",
+            collection=collection,
+            file_hash=file_hash,
+            exc_info=True,
+        )
+        return False
+
+
 @dataclass
 class IndexedFile:
     book_id: str
@@ -133,30 +171,36 @@ def index_path(
     manifest_key = _manifest_key(store_collection, file_hash)
     cached = manifest.get(manifest_key)
     if cached and not force:
-        cached_book_id = str(cached.get("book_id"))
-        cached_version = str(cached.get("version"))
-        indexed_chunks = int(cached.get("indexed_chunks", 0)) or int(cached.get("chunks", 0))
-        skipped_count = indexed_chunks or 1
-        log.info(
-            "indexed",
-            book_id=cached_book_id,
-            version=cached_version,
-            new=0,
-            skipped=skipped_count,
-            total=skipped_count,
-        )
-        return IndexResult(
-            new=0,
-            skipped=skipped_count,
-            collection=store_collection,
-            book_id=cached_book_id,
-            version=cached_version,
-            file_hash=file_hash,
-            indexed_chunks=skipped_count,
-        )
+        if not _has_indexed_vectors(store_collection, file_hash):
+            manifest.pop(manifest_key, None)
+            _save_manifest(manifest)
+        else:
+            cached_book_id = str(cached.get("book_id"))
+            cached_version = str(cached.get("version"))
+            indexed_chunks = int(cached.get("indexed_chunks", 0)) or int(cached.get("chunks", 0))
+            skipped_count = indexed_chunks or 1
+            log.info(
+                "indexed",
+                book_id=cached_book_id,
+                version=cached_version,
+                new=0,
+                skipped=skipped_count,
+                total=skipped_count,
+            )
+            return IndexResult(
+                new=0,
+                skipped=skipped_count,
+                collection=store_collection,
+                book_id=cached_book_id,
+                version=cached_version,
+                file_hash=file_hash,
+                indexed_chunks=skipped_count,
+            )
 
     if cached and force:
         manifest.pop(manifest_key, None)
+
+    manifest.pop(manifest_key, None)
 
     book_identifier = book_id or str(uuid.uuid4())
     version_identifier = version or _new_version()
