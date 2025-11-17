@@ -57,12 +57,7 @@ export function ThemeProvider({
   initialTheme?: Theme;
 }) {
   const defaultTheme = useMemo(() => initialTheme ?? getEnvDefaultTheme(), [initialTheme]);
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (initialTheme) {
-      return initialTheme;
-    }
-    return readStoredTheme() ?? defaultTheme;
-  });
+  const [theme, setTheme] = useState<Theme>(initialTheme ?? defaultTheme);
 
   useEffect(() => {
     if (typeof window === 'undefined' || initialTheme) {
