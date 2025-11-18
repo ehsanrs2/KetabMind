@@ -11,6 +11,7 @@ class DummyClient:
         self.upserts: list[Any] = []
         self.collection_exists = False
         self.vector_size = 0
+        self.last_filter: rest.Filter | None = None
 
     def get_collection(self, collection_name: str) -> None:
         if not self.collection_exists:
@@ -33,7 +34,14 @@ class DummyClient:
     ) -> tuple[list[Any], None]:
         return ([], None)
 
-    def search(self, collection_name: str, query_vector: list[float], limit: int) -> list[Any]:
+    def search(
+        self,
+        collection_name: str,
+        query_vector: list[float],
+        limit: int,
+        query_filter: rest.Filter | None = None,
+    ) -> list[Any]:
+        self.last_filter = query_filter
         class Hit:
             def __init__(self, payload: dict[str, Any]) -> None:
                 self.payload = payload
@@ -65,6 +73,8 @@ def test_vector_store(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     new, skipped = store.upsert([[0.0, 0.0, 0.0]], [payload])
     assert new == 1 and skipped == 0 and dummy.upserts
+    assert isinstance(dummy.upserts[0].id, str)
+    assert "b::c1::h" in dummy.upserts[0].id
     res = store.query([0.0, 0.0, 0.0], 1)
     assert res[0]["text"] == "dummy"
 
@@ -98,6 +108,40 @@ def test_vector_store_local(monkeypatch: pytest.MonkeyPatch) -> None:
     assert new == 1 and skipped == 0
     res = store.query([0.0, 0.0, 0.0], 1)
     assert res[0]["text"] == "test"
+
+
+def test_query_applies_book_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(qdrant.settings, "qdrant_mode", "local")  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        qdrant.settings,
+        "qdrant_location",
+        ":memory:",
+    )  # type: ignore[attr-defined]
+    dummy = DummyClient()
+    monkeypatch.setattr(qdrant, "QdrantClient", lambda *a, **k: dummy)
+    store = qdrant.VectorStore()
+    payload = cast(
+        qdrant.ChunkPayload,
+        {
+            "text": "a",
+            "book_id": "book-1",
+            "chapter": None,
+            "page_start": 1,
+            "page_end": 1,
+            "chunk_id": "c1",
+            "content_hash": "h1",
+        },
+    )
+    store.upsert([[0.0, 0.0, 0.0]], [payload])
+    store.query([0.0, 0.0, 0.0], 5, book_id="book-1")
+    assert dummy.last_filter is not None
+    must_conditions = getattr(dummy.last_filter, "must", []) or []
+    assert any(
+        isinstance(cond, rest.FieldCondition)
+        and cond.key == "book_id"
+        and getattr(cond.match, "value", None) == "book-1"
+        for cond in must_conditions
+    )
 
 
 def test_vector_store_recreates_on_dim_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
