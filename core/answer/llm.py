@@ -48,6 +48,24 @@ def _get_env_bool(key: str, default: bool) -> bool:
     return default
 
 
+def _format_http_error(exc: httpx.HTTPError, fallback: str) -> str:
+    """Extract a helpful error message from an HTTPX exception."""
+
+    response = getattr(exc, "response", None)
+    if response is not None:
+        status = getattr(response, "status_code", None)
+        text = getattr(response, "text", "")
+        if status is not None:
+            message = f"HTTP {status} from Ollama"
+            if text:
+                return f"{message}: {text}"
+            return message
+        if text:
+            return text
+    details = str(exc).strip()
+    return details or fallback
+
+
 if not hasattr(httpx, "TimeoutException"):
 
     class _CompatTimeout(httpx.HTTPError):
@@ -377,9 +395,7 @@ class OllamaLLM(LLM):
         except self._timeout_errors as exc:
             raise LLMTimeoutError("Timed out while waiting for Ollama response") from exc
         except httpx.HTTPError as exc:  # pragma: no cover - defensive
-            message = (
-                getattr(getattr(exc, "response", None), "text", "") or "Failed to contact Ollama"
-            )
+            message = _format_http_error(exc, "Failed to contact Ollama")
             raise LLMServiceError(message) from exc
         data = response.json()
         return str(data.get("response", ""))
@@ -408,10 +424,7 @@ class OllamaLLM(LLM):
             except self._timeout_errors as exc:
                 raise LLMTimeoutError("Timed out while streaming from Ollama") from exc
             except httpx.HTTPError as exc:  # pragma: no cover - defensive
-                message = (
-                    getattr(getattr(exc, "response", None), "text", "")
-                    or "Ollama streaming request failed"
-                )
+                message = _format_http_error(exc, "Ollama streaming request failed")
                 raise LLMServiceError(message) from exc
 
         return iterator()
