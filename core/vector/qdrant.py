@@ -1,5 +1,6 @@
 """Qdrant vector store client."""
 
+import inspect
 from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
@@ -120,18 +121,42 @@ class VectorStore:
             new_payloads.append(payload)
 
         points = [
-            rest.PointStruct(id=i, vector=vec, payload=dict(pl))
-            for i, (vec, pl) in enumerate(zip(new_vecs, new_payloads, strict=False))
+            rest.PointStruct(
+                id=f"{pl['book_id']}::{pl['chunk_id']}::{pl['content_hash']}",
+                vector=vec,
+                payload=dict(pl),
+            )
+            for vec, pl in zip(new_vecs, new_payloads, strict=False)
         ]
         if points:
             self.client.upsert(collection_name=self.collection, points=points)
         return len(points), skipped
 
-    def query(self, embedding: list[float], top_k: int) -> list[ChunkPayload]:
+    def query(
+        self, embedding: list[float], top_k: int, book_id: str | None = None
+    ) -> list[ChunkPayload]:
         self.ensure_collection(len(embedding))
-        result = self.client.search(
-            collection_name=self.collection, query_vector=embedding, limit=top_k
-        )
+        query_filter = None
+        if book_id is not None:
+            query_filter = rest.Filter(
+                must=[
+                    rest.FieldCondition(
+                        key="book_id", match=rest.MatchValue(value=book_id)
+                    )
+                ]
+            )
+        search_params = {
+            "collection_name": self.collection,
+            "query_vector": embedding,
+            "limit": top_k,
+        }
+        if query_filter is not None:
+            params = inspect.signature(self.client.search).parameters
+            if "query_filter" in params:
+                search_params["query_filter"] = query_filter
+            elif "filter" in params:
+                search_params["filter"] = query_filter
+        result = self.client.search(**search_params)
         return [cast(ChunkPayload, hit.payload) for hit in result]
 
     def wipe_collection(self) -> None:
