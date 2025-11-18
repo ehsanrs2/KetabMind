@@ -334,7 +334,16 @@ class OllamaLLM(LLM):
 
     def __init__(self) -> None:
         settings = config.settings
-        self._host = _get_env("OLLAMA_HOST", settings.ollama_host).rstrip("/")
+        raw_host = _get_env("OLLAMA_HOST", settings.ollama_host)
+        if raw_host is None or not raw_host.strip():
+            raise LLMServiceError(
+                "OLLAMA_HOST is not configured. "
+                "Set OLLAMA_HOST to the Ollama server URL (e.g., http://127.0.0.1:11434)."
+            )
+        normalized_host = raw_host.strip()
+        if not normalized_host.lower().startswith(("http://", "https://")):
+            normalized_host = f"http://{normalized_host}"
+        self._host = normalized_host.rstrip("/")
         self._model = _get_env("LLM_MODEL", settings.llm_model) or settings.llm_model
         self._temperature = float(_get_env("LLM_TEMPERATURE", str(settings.llm_temperature)))
         self._top_p = float(_get_env("LLM_TOP_P", str(settings.llm_top_p)))
