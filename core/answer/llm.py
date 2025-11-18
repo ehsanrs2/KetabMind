@@ -368,19 +368,6 @@ class OllamaLLM(LLM):
 
             self._post = _patched_post
 
-        patched_stream = getattr(httpx, "stream", None)
-        if patched_stream is not None and patched_stream is not _ORIGINAL_HTTPX_STREAM:
-
-            def _patched_stream(method: str, url: str, *, json: dict[str, Any]):
-                return patched_stream(  # type: ignore[arg-type]
-                    method,
-                    url,
-                    json=json,
-                    timeout=self._timeout,
-                )
-
-            self._stream_call = _patched_stream
-
     def generate(self, prompt: str, stream: bool = False) -> str | Iterator[str]:
         options: dict[str, object] = {
             "temperature": self._temperature,
