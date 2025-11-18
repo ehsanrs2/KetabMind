@@ -201,25 +201,55 @@ class Retriever:
         query_vector: Sequence[float],
         limit: int,
         page_map: Mapping[str, set[int]] | None,
+        *,
+        book_id: str | None = None,
     ) -> list[Any]:
+        def _search(
+            query_filter: rest.Filter | None = None,
+            *,
+            limit_override: int | None = None,
+            filter_book_id: str | None = None,
+        ) -> list[Any]:
+            kwargs: dict[str, Any] = {
+                "collection_name": store.collection,
+                "query_vector": query_vector,
+                "limit": limit_override or limit,
+            }
+            if query_filter is not None:
+                kwargs["query_filter"] = query_filter
+            try:
+                return list(store.client.search(**kwargs))
+            except TypeError:
+                if filter_book_id is None:
+                    raise
+                kwargs.pop("query_filter", None)
+                raw_hits = list(store.client.search(**kwargs))
+                return [
+                    hit
+                    for hit in raw_hits
+                    if str(_cast_mapping(getattr(hit, "payload", {})).get("book_id", ""))
+                    == filter_book_id
+                ]
+
         if not page_map:
-            return list(
-                store.client.search(
-                    collection_name=store.collection,
-                    query_vector=query_vector,
-                    limit=limit,
+            query_filter = None
+            if book_id:
+                query_filter = rest.Filter(
+                    must=[
+                        rest.FieldCondition(
+                            key="book_id",
+                            match=rest.MatchValue(value=book_id),
+                        )
+                    ]
                 )
-            )
+            return _search(query_filter, filter_book_id=book_id)
 
         hits: list[Any] = []
         multiplier = max(1, settings.fts_vector_multiplier)
         for matched_book_id, pages in page_map.items():
             try:
-                book_hits = store.client.search(
-                    collection_name=store.collection,
-                    query_vector=query_vector,
-                    limit=max(limit, len(pages) * multiplier),
-                    query_filter=rest.Filter(
+                book_hits = _search(
+                    rest.Filter(
                         must=[
                             rest.FieldCondition(
                                 key="book_id",
@@ -227,6 +257,8 @@ class Retriever:
                             )
                         ]
                     ),
+                    limit_override=max(limit, len(pages) * multiplier),
+                    filter_book_id=matched_book_id,
                 )
             except Exception:
                 log.warning(
@@ -346,6 +378,7 @@ class Retriever:
             query_vector,
             initial_limit,
             page_map if page_map else None,
+            book_id=book_id,
         )
         candidates = self._build_candidates(
             query,
@@ -354,7 +387,13 @@ class Retriever:
         )
 
         if page_map and not candidates:
-            hits = self._vector_hits(store, query_vector, initial_limit, None)
+            hits = self._vector_hits(
+                store,
+                query_vector,
+                initial_limit,
+                None,
+                book_id=book_id,
+            )
             candidates = self._build_candidates(query, hits, None)
 
         reranker = self._get_reranker()
