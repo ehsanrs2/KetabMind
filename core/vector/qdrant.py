@@ -1,22 +1,17 @@
 """Qdrant vector store client."""
-
-import inspect
+import uuid
 from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 from typing import TypedDict, cast
-
 import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
-
 from ..config import settings
 
 log = structlog.get_logger(__name__)
 
-
 def make_qdrant_client() -> QdrantClient:
-    """Build Qdrant client based on settings."""
     if settings.qdrant_mode == "local":
         location = settings.qdrant_location
         if location == ":memory:":
@@ -28,14 +23,9 @@ def make_qdrant_client() -> QdrantClient:
         if not settings.qdrant_url:
             raise RuntimeError("QDRANT_URL required for docker mode")
         return QdrantClient(url=settings.qdrant_url)
-    if not settings.qdrant_url:
-        raise RuntimeError("QDRANT_URL required for remote mode")
     return QdrantClient(url=settings.qdrant_url)
 
-
 class ChunkPayload(TypedDict):
-    """Payload stored in Qdrant."""
-
     text: str
     book_id: str
     chapter: str | None
@@ -44,16 +34,12 @@ class ChunkPayload(TypedDict):
     chunk_id: str
     content_hash: str
 
-
 class VectorStore:
-    """Simple Qdrant wrapper."""
-
     def __init__(self) -> None:
         self.client = make_qdrant_client()
         self.collection = settings.qdrant_collection
 
     def ensure_collection(self, dim: int) -> None:
-        """Ensure the backing collection exists with the expected vector size."""
         current = self._current_vector_size()
         if current is None:
             self.client.recreate_collection(
@@ -62,12 +48,7 @@ class VectorStore:
             )
             return
         if current != dim:
-            log.warning(
-                "recreating_qdrant_collection_due_to_dim_mismatch",
-                collection=self.collection,
-                previous_dim=current,
-                requested_dim=dim,
-            )
+            log.warning("recreating_qdrant_collection_dim_mismatch", current=current, new=dim)
             self.client.recreate_collection(
                 collection_name=self.collection,
                 vectors_config=rest.VectorParams(size=dim, distance=rest.Distance.COSINE),
@@ -78,88 +59,69 @@ class VectorStore:
             info = self.client.get_collection(self.collection)
         except Exception:
             return None
-
         params = getattr(getattr(info, "config", None), "params", None)
-        if isinstance(params, rest.CollectionParams):
-            vectors = params.vectors
-            if isinstance(vectors, rest.VectorParams):
-                return int(vectors.size)
-            if isinstance(vectors, dict):
-                size = vectors.get("size")
-                if size is not None:
-                    return int(size)
+        if isinstance(params, rest.CollectionParams) and isinstance(params.vectors, rest.VectorParams):
+            return int(params.vectors.size)
         return None
 
-    def upsert(
-        self, embeddings: Iterable[list[float]], payloads: Iterable[ChunkPayload]
-    ) -> tuple[int, int]:
-        new_vecs: list[list[float]] = []
-        new_payloads: list[ChunkPayload] = []
+    def upsert(self, embeddings: Iterable[list[float]], payloads: Iterable[ChunkPayload]) -> tuple[int, int]:
+        new_points = []
         skipped = 0
         ensured = False
+        
         for vec, payload in zip(embeddings, payloads, strict=False):
             if not ensured:
                 self.ensure_collection(len(vec))
                 ensured = True
-            existing, _ = self.client.scroll(
-                collection_name=self.collection,
-                scroll_filter=rest.Filter(
-                    must=[
-                        rest.FieldCondition(
-                            key="content_hash",
-                            match=rest.MatchValue(value=payload["content_hash"]),
-                        )
-                    ]
-                ),
-                limit=1,
-                with_payload=False,
-            )
-            if existing:
-                skipped += 1
-                continue
-            new_vecs.append(vec)
-            new_payloads.append(payload)
+            
+            # استفاده از UUID برای جلوگیری از تداخل و ایجاد شناسه یکتا
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, payload["content_hash"] + payload["book_id"]))
+            
+            new_points.append(rest.PointStruct(id=point_id, vector=vec, payload=dict(payload)))
 
-        points = [
-            rest.PointStruct(
-                id=f"{pl['book_id']}::{pl['chunk_id']}::{pl['content_hash']}",
-                vector=vec,
-                payload=dict(pl),
-            )
-            for vec, pl in zip(new_vecs, new_payloads, strict=False)
-        ]
-        if points:
-            self.client.upsert(collection_name=self.collection, points=points)
-        return len(points), skipped
+        if new_points:
+            self.client.upsert(collection_name=self.collection, points=new_points)
+            
+        return len(new_points), skipped
 
-    def query(
-        self, embedding: list[float], top_k: int, book_id: str | None = None
-    ) -> list[ChunkPayload]:
+    def query(self, embedding: list[float], top_k: int, book_id: str | None = None) -> list[ChunkPayload]:
         self.ensure_collection(len(embedding))
+        
         query_filter = None
-        if book_id is not None:
+        if book_id:
             query_filter = rest.Filter(
                 must=[
                     rest.FieldCondition(
-                        key="book_id", match=rest.MatchValue(value=book_id)
+                        key="book_id",
+                        match=rest.MatchValue(value=book_id),
                     )
                 ]
             )
-        search_params = {
-            "collection_name": self.collection,
-            "query_vector": embedding,
-            "limit": top_k,
-        }
-        if query_filter is not None:
-            params = inspect.signature(self.client.search).parameters
-            if "query_filter" in params:
-                search_params["query_filter"] = query_filter
-            elif "filter" in params:
-                search_params["filter"] = query_filter
-        result = self.client.search(**search_params)
+
+        result = self.client.search(
+            collection_name=self.collection, 
+            query_vector=embedding, 
+            limit=top_k,
+            query_filter=query_filter
+        )
         return [cast(ChunkPayload, hit.payload) for hit in result]
 
+    def delete_by_book_id(self, book_id: str) -> None:
+        """Delete all vectors for a specific book."""
+        self.client.delete(
+            collection_name=self.collection,
+            points_selector=rest.FilterSelector(
+                filter=rest.Filter(
+                    must=[
+                        rest.FieldCondition(
+                            key="book_id",
+                            match=rest.MatchValue(value=book_id),
+                        )
+                    ]
+                )
+            ),
+        )
+
     def wipe_collection(self) -> None:
-        """Drop the current collection."""
         with suppress(Exception):
             self.client.delete_collection(collection_name=self.collection)
