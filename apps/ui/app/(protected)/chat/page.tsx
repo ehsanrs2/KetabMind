@@ -10,6 +10,8 @@ import {
   useState,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { BookSidebar, type BookMutation } from './components/BookSidebar';
+import type { BookRecord } from './types';
 import { useAuth } from '../../context/AuthContext';
 import { useRTL } from '../../hooks/useRTL';
 
@@ -104,15 +106,6 @@ type BookmarkRecord = {
   createdAt?: string | null;
   tag: string | null;
   message: ChatMessage;
-};
-
-type BookRecord = {
-  bookId: string;
-  title: string;
-  metadata?: Record<string, unknown> | null;
-  version?: string | null;
-  fileHash?: string | null;
-  indexedChunks?: number | null;
 };
 
 type BooksResponse = {
@@ -679,6 +672,7 @@ export default function ChatPage() {
   const [activeBookmarkMessageId, setActiveBookmarkMessageId] = useState<string | null>(null);
   const [books, setBooks] = useState<BookRecord[]>([]);
   const [booksError, setBooksError] = useState<string | null>(null);
+  const [bookMutation, setBookMutation] = useState<BookMutation>(null);
   const [isLoadingBooks, setIsLoadingBooks] = useState(false);
   const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -870,7 +864,11 @@ export default function ChatPage() {
         throw new Error('Failed to load books');
       }
       const payload = await response.json();
-      const mapped = extractBooks(payload);
+      const data =
+        payload && typeof payload === 'object' && 'books' in payload
+          ? ((payload as { books?: unknown }).books ?? [])
+          : payload;
+      const mapped = extractBooks(data);
       setBooks(mapped);
     } catch (err) {
       console.warn('Failed to load books', err);
@@ -947,6 +945,65 @@ export default function ChatPage() {
       }
     },
     [],
+  );
+
+  const handleDeleteBook = useCallback(
+    async (bookId: string) => {
+      setBooksError(null);
+      setBookMutation({ id: bookId, type: 'delete' });
+      try {
+        const response = await fetch(`/api/books/${encodeURIComponent(bookId)}`, {
+          method: 'DELETE',
+          headers: hasCsrfToken ? csrfHeaders : undefined,
+          credentials: 'include',
+        });
+        if (!response.ok && response.status !== 204) {
+          throw new Error('Failed to delete book');
+        }
+        setBooks((current) => current.filter((book) => book.bookId !== bookId));
+        setSelectedBookIds((current) => current.filter((id) => id !== bookId));
+      } catch (err) {
+        console.warn('Failed to delete book', err);
+        setBooksError('Unable to delete book. Please try again.');
+        throw err;
+      } finally {
+        setBookMutation(null);
+      }
+    },
+    [csrfHeaders, hasCsrfToken],
+  );
+
+  const handleRenameBook = useCallback(
+    async (bookId: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) {
+        throw new Error('Title cannot be empty.');
+      }
+      setBooksError(null);
+      setBookMutation({ id: bookId, type: 'rename' });
+      try {
+        const response = await fetch(`/api/books/${encodeURIComponent(bookId)}/rename`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...csrfHeaders,
+          },
+          credentials: 'include',
+          body: JSON.stringify({ title: trimmed }),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to rename book');
+        }
+        setBooks((current) => current.map((book) => (book.bookId === bookId ? { ...book, title: trimmed } : book)));
+      } catch (err) {
+        console.warn('Failed to rename book', err);
+        setBooksError('Unable to rename book. Please try again.');
+        throw err;
+      } finally {
+        setBookMutation(null);
+      }
+    },
+    [csrfHeaders],
   );
 
   const handleSearchSubmit = useCallback(
@@ -1893,102 +1950,78 @@ export default function ChatPage() {
         </header>
 
         <section className="chat-search" aria-label="Search indexed books">
-          <div className="chat-search__control">
-            <p className="chat-search__label">Indexed books</p>
-            {sortedBooks.length === 0 ? (
-              <p className="chat-search__status">Upload a book to enable filtering.</p>
-            ) : (
-              <>
-                <div className="chat-search__book-chips" role="group" aria-label="Book filters">
-                  {sortedBooks.map((book) => {
-                    const isActive = selectedBookIds.includes(book.bookId);
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <BookSidebar
+              books={sortedBooks}
+              selectedBookIds={selectedBookIds}
+              onToggleBook={toggleBookSelection}
+              onClearSelection={handleClearBookSelection}
+              isLoading={isLoadingBooks}
+              error={booksError}
+              onRetry={() => {
+                void loadBooks();
+              }}
+              onDeleteBook={handleDeleteBook}
+              onRenameBook={handleRenameBook}
+              pendingAction={bookMutation}
+            />
+            <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <form className="chat-search__form" onSubmit={handleSearchSubmit}>
+                <label className="chat-search__label" htmlFor="chat-search-query">
+                  Search pages
+                </label>
+                <div className="chat-search__form-row">
+                  <input
+                    id="chat-search-query"
+                    type="search"
+                    className="chat-search__input"
+                    value={searchQuery}
+                    onChange={handleSearchQueryChange}
+                    placeholder={searchInputPlaceholder}
+                    aria-label="Search across indexed books"
+                  />
+                  <button
+                    className="chat-button chat-search__submit"
+                    type="submit"
+                    disabled={isSearchSubmitDisabled}
+                  >
+                    {isSearching ? 'Searching…' : 'Search'}
+                  </button>
+                </div>
+              </form>
+              <div className="chat-search__status-list" aria-live="polite">
+                {searchError ? (
+                  <p className="chat-search__status chat-search__status--error">{searchError}</p>
+                ) : null}
+                {searchMessage ? <p className="chat-search__status">{searchMessage}</p> : null}
+              </div>
+              {searchResults.length > 0 ? (
+                <ul className="chat-search__results">
+                  {searchResults.map((result, index) => {
+                    const displayTitle = bookTitleLookup.get(result.bookId) ?? result.bookId;
+                    const scoreLabel =
+                      result.score === null ? null : result.score.toFixed(3);
+                    const viewerHref = `/viewer?book=${encodeURIComponent(result.bookId)}#page=${result.pageNum}`;
                     return (
-                      <button
-                        type="button"
-                        key={book.bookId}
-                        className={`chat-search__book-chip${isActive ? ' chat-search__book-chip--active' : ''}`}
-                        onClick={() => toggleBookSelection(book.bookId)}
-                      >
-                        {book.title}
-                      </button>
+                      <li className="chat-search__result" key={`${result.bookId}-${result.pageNum}-${index}`}>
+                        <div className="chat-search__result-meta">
+                          <span className="chat-search__result-book">{displayTitle}</span>
+                          <span className="chat-search__result-page">Page {result.pageNum}</span>
+                          {scoreLabel ? (
+                            <span className="chat-search__result-score">Score {scoreLabel}</span>
+                          ) : null}
+                        </div>
+                        <p className="chat-search__result-snippet">{result.text}</p>
+                        <a className="chat-search__result-link" href={viewerHref}>
+                          Open in viewer
+                        </a>
+                      </li>
                     );
                   })}
-                </div>
-                {selectedBookIds.length > 0 ? (
-                  <div className="chat-search__chip-footer">
-                    <span>{selectedBookIds.length} selected</span>
-                    <button
-                      type="button"
-                      className="chat-search__chip-clear"
-                      onClick={handleClearBookSelection}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-          <form className="chat-search__form" onSubmit={handleSearchSubmit}>
-            <label className="chat-search__label" htmlFor="chat-search-query">
-              Search pages
-            </label>
-            <div className="chat-search__form-row">
-              <input
-                id="chat-search-query"
-                type="search"
-                className="chat-search__input"
-                value={searchQuery}
-                onChange={handleSearchQueryChange}
-                placeholder={searchInputPlaceholder}
-                aria-label="Search across indexed books"
-              />
-              <button
-                className="chat-button chat-search__submit"
-                type="submit"
-                disabled={isSearchSubmitDisabled}
-              >
-                {isSearching ? 'Searching…' : 'Search'}
-              </button>
+                </ul>
+              ) : null}
             </div>
-          </form>
-          <div className="chat-search__status-list" aria-live="polite">
-            {isLoadingBooks ? (
-              <p className="chat-search__status">Loading indexed books…</p>
-            ) : null}
-            {booksError ? (
-              <p className="chat-search__status chat-search__status--error">{booksError}</p>
-            ) : null}
-            {searchError ? (
-              <p className="chat-search__status chat-search__status--error">{searchError}</p>
-            ) : null}
-            {searchMessage ? <p className="chat-search__status">{searchMessage}</p> : null}
           </div>
-          {searchResults.length > 0 ? (
-            <ul className="chat-search__results">
-              {searchResults.map((result, index) => {
-                const displayTitle = bookTitleLookup.get(result.bookId) ?? result.bookId;
-                const scoreLabel =
-                  result.score === null ? null : result.score.toFixed(3);
-                const viewerHref = `/viewer?book=${encodeURIComponent(result.bookId)}#page=${result.pageNum}`;
-                return (
-                  <li className="chat-search__result" key={`${result.bookId}-${result.pageNum}-${index}`}>
-                    <div className="chat-search__result-meta">
-                      <span className="chat-search__result-book">{displayTitle}</span>
-                      <span className="chat-search__result-page">Page {result.pageNum}</span>
-                      {scoreLabel ? (
-                        <span className="chat-search__result-score">Score {scoreLabel}</span>
-                      ) : null}
-                    </div>
-                    <p className="chat-search__result-snippet">{result.text}</p>
-                    <a className="chat-search__result-link" href={viewerHref}>
-                      Open in viewer
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
         </section>
 
         {error ? <div className="chat-error" role="alert">{error}</div> : null}

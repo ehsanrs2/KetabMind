@@ -13,6 +13,7 @@
     "@react-pdf-viewer/core": "3.12.0",
     "@react-pdf-viewer/page-navigation": "3.12.0",
     "framer-motion": "^11.0.14",
+    "lucide-react": "^0.451.0",
     "next": "14.2.4",
     "pdfjs-dist": "3.11.174",
     "react": "18.2.0",
@@ -27,11 +28,11 @@
     "@types/node": "20.11.30",
     "@types/react": "18.2.46",
     "@types/react-dom": "18.2.18",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.4",
     "identity-obj-proxy": "3.0.0",
     "jest": "29.7.0",
     "jest-environment-jsdom": "29.7.0",
-    "eslint": "8.57.0",
-    "eslint-config-next": "14.2.4",
     "typescript": "5.4.5",
     "whatwg-fetch": "3.6.20"
   }
