@@ -10,10 +10,21 @@ import {
   useState,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BookSidebar, type BookMutation } from './components/BookSidebar';
+import {
+  BookSidebar,
+  type BookMutation,
+  type BookSidebarFeedback,
+} from '../../components/Chat/BookSidebar';
 import type { BookRecord } from './types';
 import { useAuth } from '../../context/AuthContext';
 import { useRTL } from '../../hooks/useRTL';
+import {
+  deleteBook as deleteBookApi,
+  listBooks,
+  renameBook as renameBookApi,
+}
+  from '../books/api';
+import type { BookRecord as ApiBookRecord } from '../books/api';
 
 type SessionSummary = {
   id: string;
@@ -143,6 +154,7 @@ type SearchResponse = {
 
 const ALL_BOOKMARKS_FILTER = 'all';
 const UNTAGGED_BOOKMARKS_FILTER = '__untagged__';
+const BOOKS_PAGE_SIZE = 50;
 
 function createMessageId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -558,7 +570,9 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function normaliseBook(item: BooksResponse['books'][number]): BookRecord | null {
+function normaliseBook(
+  item: BooksResponse['books'][number] | ApiBookRecord,
+): BookRecord | null {
   if (!item) {
     return null;
   }
@@ -601,23 +615,6 @@ function normaliseBook(item: BooksResponse['books'][number]): BookRecord | null 
     fileHash,
     indexedChunks,
   };
-}
-
-function extractBooks(payload: unknown): BookRecord[] {
-  if (Array.isArray(payload)) {
-    return payload
-      .map((item) => normaliseBook(item as BooksResponse['books'][number]))
-      .filter((item): item is BookRecord => item !== null);
-  }
-  if (payload && typeof payload === 'object' && 'books' in payload) {
-    const booksPayload = (payload as BooksResponse).books;
-    if (Array.isArray(booksPayload)) {
-      return booksPayload
-        .map((item) => normaliseBook(item))
-        .filter((item): item is BookRecord => item !== null);
-    }
-  }
-  return [];
 }
 
 function normaliseSearchResult(item: SearchResponse['results'][number]): SearchResult | null {
@@ -673,6 +670,7 @@ export default function ChatPage() {
   const [books, setBooks] = useState<BookRecord[]>([]);
   const [booksError, setBooksError] = useState<string | null>(null);
   const [bookMutation, setBookMutation] = useState<BookMutation>(null);
+  const [bookFeedback, setBookFeedback] = useState<BookSidebarFeedback | null>(null);
   const [isLoadingBooks, setIsLoadingBooks] = useState(false);
   const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -857,19 +855,23 @@ export default function ChatPage() {
     setIsLoadingBooks(true);
     setBooksError(null);
     try {
-      const response = await fetch('/api/books', {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to load books');
+      const aggregated: BookRecord[] = [];
+      let offset = 0;
+      let total = 0;
+      while (true) {
+        const page = await listBooks({ limit: BOOKS_PAGE_SIZE, offset });
+        total = page.total;
+        const pageBooks = page.books
+          .map((item) => normaliseBook(item))
+          .filter((item): item is BookRecord => item !== null);
+        aggregated.push(...pageBooks);
+        const fetchedCount = page.books.length;
+        if (aggregated.length >= total || fetchedCount < BOOKS_PAGE_SIZE || fetchedCount === 0) {
+          break;
+        }
+        offset += fetchedCount;
       }
-      const payload = await response.json();
-      const data =
-        payload && typeof payload === 'object' && 'books' in payload
-          ? ((payload as { books?: unknown }).books ?? [])
-          : payload;
-      const mapped = extractBooks(data);
-      setBooks(mapped);
+      setBooks(aggregated);
     } catch (err) {
       console.warn('Failed to load books', err);
       setBooks([]);
@@ -950,27 +952,25 @@ export default function ChatPage() {
   const handleDeleteBook = useCallback(
     async (bookId: string) => {
       setBooksError(null);
+      setBookFeedback(null);
       setBookMutation({ id: bookId, type: 'delete' });
       try {
-        const response = await fetch(`/api/books/${encodeURIComponent(bookId)}`, {
-          method: 'DELETE',
-          headers: hasCsrfToken ? csrfHeaders : undefined,
-          credentials: 'include',
-        });
-        if (!response.ok && response.status !== 204) {
-          throw new Error('Failed to delete book');
-        }
+        await deleteBookApi(bookId, csrfToken ?? null);
         setBooks((current) => current.filter((book) => book.bookId !== bookId));
         setSelectedBookIds((current) => current.filter((id) => id !== bookId));
+        setBookFeedback({ type: 'success', message: 'Book deleted successfully.' });
       } catch (err) {
         console.warn('Failed to delete book', err);
-        setBooksError('Unable to delete book. Please try again.');
+        const message =
+          err instanceof Error ? err.message : 'Unable to delete book. Please try again.';
+        setBooksError(message);
+        setBookFeedback({ type: 'error', message });
         throw err;
       } finally {
         setBookMutation(null);
       }
     },
-    [csrfHeaders, hasCsrfToken],
+    [csrfToken],
   );
 
   const handleRenameBook = useCallback(
@@ -980,30 +980,36 @@ export default function ChatPage() {
         throw new Error('Title cannot be empty.');
       }
       setBooksError(null);
+      setBookFeedback(null);
       setBookMutation({ id: bookId, type: 'rename' });
       try {
-        const response = await fetch(`/api/books/${encodeURIComponent(bookId)}/rename`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            ...csrfHeaders,
-          },
-          credentials: 'include',
-          body: JSON.stringify({ title: trimmed }),
-        });
-        if (!response.ok) {
-          throw new Error('Failed to rename book');
-        }
-        setBooks((current) => current.map((book) => (book.bookId === bookId ? { ...book, title: trimmed } : book)));
+        const updated = await renameBookApi(
+          bookId,
+          { title: trimmed },
+          csrfToken ?? null,
+        );
+        const normalised = normaliseBook(updated as ApiBookRecord);
+        setBooks((current) =>
+          current.map((book) => {
+            if (book.bookId !== bookId) {
+              return book;
+            }
+            return normalised ?? { ...book, title: trimmed };
+          }),
+        );
+        setBookFeedback({ type: 'success', message: 'Book renamed successfully.' });
       } catch (err) {
         console.warn('Failed to rename book', err);
-        setBooksError('Unable to rename book. Please try again.');
+        const message =
+          err instanceof Error ? err.message : 'Unable to rename book. Please try again.';
+        setBooksError(message);
+        setBookFeedback({ type: 'error', message });
         throw err;
       } finally {
         setBookMutation(null);
       }
     },
-    [csrfHeaders],
+    [csrfToken],
   );
 
   const handleSearchSubmit = useCallback(
@@ -1964,6 +1970,8 @@ export default function ChatPage() {
               onDeleteBook={handleDeleteBook}
               onRenameBook={handleRenameBook}
               pendingAction={bookMutation}
+              feedback={bookFeedback}
+              onDismissFeedback={() => setBookFeedback(null)}
             />
             <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <form className="chat-search__form" onSubmit={handleSearchSubmit}>
