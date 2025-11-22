@@ -5,15 +5,25 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from apps.api.auth import (
@@ -24,6 +34,7 @@ from apps.api.auth import (
     get_user_profile,
 )
 from core.config import settings
+from core.answer.answerer import stream_answer
 
 try:
     from . import local_llm  # type: ignore
@@ -400,7 +411,9 @@ def create_session_message(session_id: UUID, payload: MessageCreate) -> Message:
 
 @app.post("/sessions/{session_id}/messages/stream")
 async def stream_session_message(
-    session_id: UUID, payload: StreamMessageRequest
+    session_id: UUID,
+    payload: StreamMessageRequest,
+    book_id: Annotated[str | None, Query()] = None,
 ) -> StreamingResponse:
     """Stream an assistant response for the provided session using server-sent events."""
 
@@ -408,47 +421,70 @@ async def stream_session_message(
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-    user_message = _append_message(session, "user", payload.content)
-    include_context = bool(payload.context)
-    prompt = _build_prompt_for_model(session, user_message, include_context)
+    question = (payload.content or "").strip()
+    if not question:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User message is empty")
 
-    async def _model_stream() -> AsyncIterator[str]:
-        if payload.model == "ollama":
-            stream_fn = getattr(local_llm, "generate_stream", None)
-            if callable(stream_fn):
-                async for chunk in stream_fn(prompt, model=payload.model):
-                    yield chunk
-                return
-        response_text = _compose_simulated_response(session, payload)
-        async for chunk in _simulate_streaming_response(response_text):
-            yield chunk
+    _append_message(session, "user", question)
 
     async def _event_stream() -> AsyncIterator[str]:
-        collected: list[str] = []
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        final_answer: str | None = None
+        final_contexts: list[dict[str, Any]] = []
+        final_meta: dict[str, Any] | None = None
         error_message: str | None = None
 
+        def _produce() -> None:
+            try:
+                for chunk in stream_answer(question, book_id=book_id):
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
+            except Exception as exc:  # pragma: no cover - defensive
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+            else:
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+
+        producer_task = asyncio.create_task(asyncio.to_thread(_produce))
+
         try:
-            async for piece in _model_stream():
-                if not piece:
-                    continue
-                collected.append(piece)
-                chunk_payload = {"delta": piece, "done": False}
-                yield "data: " + json.dumps(chunk_payload, ensure_ascii=False) + "\n\n"
-        except Exception as exc:  # pragma: no cover - defensive
-            error_message = str(exc)
-            error_payload = {"error": error_message, "done": True}
-            yield "data: " + json.dumps(error_payload, ensure_ascii=False) + "\n\n"
-        else:
-            final_text = "".join(collected).strip()
-            _append_message(session, "assistant", final_text)
-            final_payload: dict[str, Any] = {
-                "answer": final_text,
-                "contexts": [],
-                "done": True,
-            }
-            yield "data: " + json.dumps(final_payload, ensure_ascii=False) + "\n\n"
+            while True:
+                kind, item = await queue.get()
+                if kind == "chunk":
+                    chunk = cast(dict[str, Any], item)
+                    delta = chunk.get("delta")
+                    if isinstance(delta, str) and delta:
+                        yield "data: " + json.dumps({"delta": delta}, ensure_ascii=False) + "\n\n"
+                        continue
+                    if "answer" not in chunk:
+                        continue
+                    final_answer = str(chunk.get("answer") or "")
+                    raw_contexts = chunk.get("contexts") or []
+                    final_contexts = [dict(ctx) for ctx in raw_contexts if isinstance(ctx, Mapping)]
+                    raw_meta = chunk.get("meta")
+                    final_meta = raw_meta if isinstance(raw_meta, Mapping) else None
+                    data: dict[str, Any] = {"answer": final_answer, "contexts": final_contexts}
+                    if final_meta:
+                        data["meta"] = final_meta
+                    debug_payload = chunk.get("debug")
+                    if debug_payload is not None:
+                        data["debug"] = debug_payload
+                    yield "data: " + json.dumps(data, ensure_ascii=False) + "\n\n"
+                elif kind == "error":
+                    error_message = str(item)
+                    error_payload = {"error": error_message}
+                    yield "data: " + json.dumps(error_payload, ensure_ascii=False) + "\n\n"
+                    break
+                elif kind == "done":
+                    break
+        except asyncio.CancelledError:  # pragma: no cover - client cancelled
+            error_message = "cancelled"
         finally:
-            yield "data: [DONE]\n\n"
+            await producer_task
+
+        if error_message is None and final_answer is not None:
+            _append_message(session, "assistant", final_answer)
+
+        yield "data: [DONE]\n\n"
 
     return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
