@@ -52,6 +52,21 @@ def ensure_book_record(
     existing = repo.get_by_vector_id(book_id)
     if existing is not None:
         return existing
+
+    legacy: models.Book | None = None
+    try:
+        numeric_book_id = int(book_id)
+    except (TypeError, ValueError):
+        numeric_book_id = None
+
+    if numeric_book_id is not None:
+        legacy = repo.get(numeric_book_id)
+
+    if legacy is not None and legacy.vector_id is None:
+        legacy.vector_id = book_id
+        db_session.flush()
+        return legacy
+
     title_source = book_title_from_meta(metadata, title_fallback or book_id)
     record = repo.create(title=title_source, vector_id=book_id)
     db_session.flush()
