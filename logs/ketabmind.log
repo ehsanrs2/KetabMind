@@ -217,3 +217,153 @@ Ollama request using model 'aya:latest' at 'http://localhost:11434/api/generate'
 {"request_id": "2c50cf4c-737c-4e83-8af2-393922f800c6", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.468, "event": "http.request", "level": "INFO"}
 {"request_id": "af540836-1388-44fe-acf3-796bd6bfe44c", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 2.591, "event": "http.request", "level": "INFO"}
 {"request_id": "defdd7f4-e04e-4cf0-93a1-a742b7bd5168", "path": "/books", "method": "GET", "status": 200, "latency_ms": 5.072, "event": "http.request", "level": "INFO"}
+{"request_id": "292e9e0b-64cc-4d90-b3c5-68a3cbb4371c", "path": "", "method": "", "status": null, "latency_ms": null, "event": "sessions.cleanup", "removed": 17, "cutoff": "2025-10-23T16:11:42.919472+00:00", "level": "INFO"}
+{"request_id": "878638ae-fde5-406a-86c2-c0118dc64544", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.23, "event": "http.request", "level": "INFO"}
+{"request_id": "696ab272-c08f-4e72-8e02-53efd378ebc7", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.517, "event": "http.request", "level": "INFO"}
+{"request_id": "2a75bedf-a524-4578-af2d-f136bb484074", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 17.362, "event": "http.request", "level": "INFO"}
+{"request_id": "dcdba9fc-5ce3-4996-b326-4544fd461395", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 14.389, "event": "http.request", "level": "INFO"}
+{"request_id": "051cb906-19a0-453b-a7b0-3ee79042cff6", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 11.278, "event": "http.request", "level": "INFO"}
+{"request_id": "b5143d5b-d491-4e39-817b-5c8c99921c95", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 16.958, "event": "http.request", "level": "INFO"}
+{"request_id": "899671ab-354a-4b96-8c81-60d02a127746", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 9.119, "event": "http.request", "level": "INFO"}
+{"request_id": "06b4c0e2-ded3-4863-8272-ad3ac94f652c", "path": "/upload", "method": "POST", "status": null, "latency_ms": null, "event": "indexed", "book_id": "aed5cfd9-a4ed-43d8-964c-1096597492a2", "version": "v20251122184120555873", "new": 53, "skipped": 0, "total": 53, "level": "INFO"}
+{"request_id": "06b4c0e2-ded3-4863-8272-ad3ac94f652c", "path": "/upload", "method": "POST", "status": 200, "latency_ms": 349.36, "event": "http.request", "level": "INFO"}
+{"request_id": "9d34037a-89ee-47f0-bb35-0f4917eb6dcf", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 6.209, "event": "http.request", "level": "INFO"}
+{"request_id": "fdd1ea85-74cb-4c34-988f-ef235d541e9a", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 5.981, "event": "http.request", "level": "INFO"}
+{"request_id": "15c0ae8e-1a68-497e-92cd-2e93dacbe19a", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 15.374, "event": "http.request", "level": "INFO"}
+{"request_id": "9a1485d0-d2c5-4b6e-9bc9-8fa2b423c8ee", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 8.371, "event": "http.request", "level": "INFO"}
+{"request_id": "89c1e491-dfc8-4cf1-a39a-050ca73999cd", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 5.786, "event": "http.request", "level": "INFO"}
+{"request_id": "9c581043-3913-4d13-8c32-87923ef86c54", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 18.532, "event": "http.request", "level": "INFO"}
+{"request_id": "b026f0e2-b933-4ce8-9d2f-cfc7322f81fd", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 14.221, "event": "http.request", "level": "INFO"}
+{"request_id": "707ad39b-424c-4e51-b647-6f33896dce59", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 17.154, "event": "http.request", "level": "INFO"}
+{"request_id": "fd6cfcfe-93ea-428b-929c-25f8007d003d", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 26.578, "event": "http.request", "level": "INFO"}
+{"request_id": "295c46c9-4dbf-4939-9db3-79ed94b02072", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 21.68, "event": "http.request", "level": "INFO"}
+{"request_id": "e112d1ed-08de-48a4-9727-0e35111796db", "path": "/upload", "method": "POST", "status": 200, "latency_ms": 7.018, "event": "http.request", "level": "INFO"}
+{"request_id": "1a5777cc-38ac-46ae-be14-24cd98d73cdf", "path": "/books/aed5cfd9-a4ed-43d8-964c-1096597492a2", "method": "GET", "status": 200, "latency_ms": 3.191, "event": "http.request", "level": "INFO"}
+{"request_id": "69745610-b9d6-469d-bba1-4f5db9e47471", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.867, "event": "http.request", "level": "INFO"}
+{"request_id": "c778042e-7bf6-466d-9c47-f41f0b38a3eb", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.114, "event": "http.request", "level": "INFO"}
+{"request_id": "dc749568-e22d-488b-bce7-aa0e6fc1ab60", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 24.436, "event": "http.request", "level": "INFO"}
+{"request_id": "34873ee0-e1b0-486a-a417-128c965654d1", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 23.234, "event": "http.request", "level": "INFO"}
+{"request_id": "b5a55d48-7391-4892-a301-13597969f76b", "path": "/books", "method": "GET", "status": 200, "latency_ms": 40.799, "event": "http.request", "level": "INFO"}
+{"request_id": "ba6e3579-f94a-489e-b864-c2855fc41158", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 11.264, "event": "http.request", "level": "INFO"}
+{"request_id": "2f510729-ebb8-47f8-b77a-7d399294f69e", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 31.056, "event": "http.request", "level": "INFO"}
+{"request_id": "ee6ae5bd-1367-4c02-95f4-129f69e442f4", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 27.186, "event": "http.request", "level": "INFO"}
+{"request_id": "ed162486-f527-45fe-8a8f-0e7e0f24984d", "path": "/books", "method": "GET", "status": 200, "latency_ms": 24.021, "event": "http.request", "level": "INFO"}
+{"request_id": "a44737c0-6208-4b1c-97fe-c38b3d429d8b", "path": "/sessions/27/messages", "method": "POST", "status": 200, "latency_ms": 20.494, "event": "http.request", "level": "INFO"}
+{"request_id": "70f454ac-7dd0-4e5a-bee0-0982b4dcde17", "path": "/sessions/27/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "27", "book_ids": ["aed5cfd9-a4ed-43d8-964c-1096597492a2"], "model": "ollama", "level": "INFO"}
+{"request_id": "70f454ac-7dd0-4e5a-bee0-0982b4dcde17", "path": "/sessions/27/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "27", "book_id": "aed5cfd9-a4ed-43d8-964c-1096597492a2", "level": "INFO"}
+{"request_id": "70f454ac-7dd0-4e5a-bee0-0982b4dcde17", "path": "/sessions/27/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.persisted", "session_id": "27", "citation_count": 1, "level": "INFO"}
+{"request_id": "70f454ac-7dd0-4e5a-bee0-0982b4dcde17", "path": "/sessions/27/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.complete", "session_id": "27", "error": null, "level": "INFO"}
+{"request_id": "70f454ac-7dd0-4e5a-bee0-0982b4dcde17", "path": "/sessions/27/messages/stream", "method": "POST", "status": 200, "latency_ms": 57.41, "event": "http.request", "level": "INFO"}
+{"request_id": "7cf73e73-0ce5-45b3-b266-59990717e73e", "path": "/me", "method": "GET", "status": 200, "latency_ms": 2.884, "event": "http.request", "level": "INFO"}
+{"request_id": "b23bed3c-f9e5-4fe6-a61a-a21ad498944e", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.168, "event": "http.request", "level": "INFO"}
+{"request_id": "fb198fe4-21ed-4095-9461-380239c5d8e0", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 32.048, "event": "http.request", "level": "INFO"}
+{"request_id": "0fa6b035-db3e-4eb8-a99d-497cb70ac769", "path": "/books", "method": "GET", "status": 200, "latency_ms": 33.483, "event": "http.request", "level": "INFO"}
+{"request_id": "43d94c05-2221-4d78-b586-951f7046c971", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 48.605, "event": "http.request", "level": "INFO"}
+{"request_id": "74c6cff4-2f7d-4a3d-a41a-acc7557c764b", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 9.485, "event": "http.request", "level": "INFO"}
+{"request_id": "c39b94d3-b8be-4297-bb72-334134cfdc0e", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 21.811, "event": "http.request", "level": "INFO"}
+{"request_id": "1dc55f78-1f35-4af3-8c78-cd3fa2458bdb", "path": "/books", "method": "GET", "status": 200, "latency_ms": 23.592, "event": "http.request", "level": "INFO"}
+{"request_id": "10f7de86-b7be-423d-99af-d6d43ef9d094", "path": "/sessions/27/messages", "method": "GET", "status": 200, "latency_ms": 22.34, "event": "http.request", "level": "INFO"}
+{"request_id": "87e47ae9-551d-4717-aa55-e615a82874a2", "path": "/sessions/27", "method": "DELETE", "status": 204, "latency_ms": 19.21, "event": "http.request", "level": "INFO"}
+{"request_id": "12075aa2-f0ae-4ab6-bc5e-cf4343bf57d1", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 6.574, "event": "http.request", "level": "INFO"}
+{"request_id": "4a23d0c0-364b-4592-86d7-211fcc19f1e7", "path": "/sessions/26/messages", "method": "GET", "status": 200, "latency_ms": 4.368, "event": "http.request", "level": "INFO"}
+{"request_id": "3b764648-b40c-4d95-a279-dd0f5f364779", "path": "/sessions/26", "method": "DELETE", "status": 204, "latency_ms": 15.074, "event": "http.request", "level": "INFO"}
+{"request_id": "5c541b00-9d5e-4c26-8437-0631d54ea8b0", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 3.94, "event": "http.request", "level": "INFO"}
+{"request_id": "038c9707-f8b0-4edd-800e-ae79114799e4", "path": "/sessions", "method": "POST", "status": 200, "latency_ms": 18.813, "event": "http.request", "level": "INFO"}
+{"request_id": "8b41ee9f-76d4-4115-9d37-70c353aa51f8", "path": "/sessions/28/messages", "method": "GET", "status": 200, "latency_ms": 4.115, "event": "http.request", "level": "INFO"}
+{"request_id": "433b0eed-49bf-441b-9889-ec6b9b7463d9", "path": "/sessions/28/messages", "method": "POST", "status": 200, "latency_ms": 22.109, "event": "http.request", "level": "INFO"}
+{"request_id": "5ce504f6-d2fc-44b3-9696-f4c48684f622", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "28", "book_ids": [], "model": "ollama", "level": "INFO"}
+{"request_id": "5ce504f6-d2fc-44b3-9696-f4c48684f622", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "28", "book_id": null, "level": "INFO"}
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: BAAI/bge-base-en-v1.5
+{"request_id": "5ce504f6-d2fc-44b3-9696-f4c48684f622", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.cancelled", "session_id": "28", "level": "INFO"}
+{"request_id": "3bb2f480-32ec-4b7f-9d5a-73a8dce2f29e", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.059, "event": "http.request", "level": "INFO"}
+{"request_id": "17f2970f-f657-4007-b466-f8be482b27eb", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.062, "event": "http.request", "level": "INFO"}
+{"request_id": "a2e4f527-a409-476f-9285-998f7c1d30ed", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 6.365, "event": "http.request", "level": "INFO"}
+{"request_id": "6558ac59-4c70-422e-8735-ce1a8952553e", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 13.637, "event": "http.request", "level": "INFO"}
+{"request_id": "faa4d5fe-6a95-48d3-b65b-dfa8cc1ddaa5", "path": "/books", "method": "GET", "status": 200, "latency_ms": 17.405, "event": "http.request", "level": "INFO"}
+{"request_id": "6797e523-d405-415b-963d-550b7ebe5462", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 11.927, "event": "http.request", "level": "INFO"}
+{"request_id": "8801d973-29c6-4494-9672-840d1b9b1025", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 8.161, "event": "http.request", "level": "INFO"}
+{"request_id": "bdfe1906-9d9d-42d9-a352-cf349115acae", "path": "/books", "method": "GET", "status": 200, "latency_ms": 12.207, "event": "http.request", "level": "INFO"}
+{"request_id": "3cf6f7f2-bade-401a-9ef1-ce0d9388cb5c", "path": "/sessions/28/messages", "method": "GET", "status": 200, "latency_ms": 6.6, "event": "http.request", "level": "INFO"}
+{"request_id": "14521b77-f810-4e03-be1d-27e4b6a614cc", "path": "/sessions/28/messages", "method": "POST", "status": 200, "latency_ms": 13.78, "event": "http.request", "level": "INFO"}
+{"request_id": "0523b3b0-cc46-4367-a28a-a227d21ab596", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "28", "book_ids": [], "model": "ollama", "level": "INFO"}
+{"request_id": "0523b3b0-cc46-4367-a28a-a227d21ab596", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "28", "book_id": null, "level": "INFO"}
+{"request_id": "0523b3b0-cc46-4367-a28a-a227d21ab596", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.error", "session_id": "28", "error": "CUDA error: no kernel image is available for execution on the device\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n", "level": "WARNING"}
+{"request_id": "0523b3b0-cc46-4367-a28a-a227d21ab596", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.complete", "session_id": "28", "error": "CUDA error: no kernel image is available for execution on the device\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n", "level": "INFO"}
+{"request_id": "0523b3b0-cc46-4367-a28a-a227d21ab596", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": 20.09, "event": "http.request", "level": "INFO"}
+{"request_id": "b0b1f24f-c55d-4f5a-a469-71344d34348e", "path": "/sessions/28/messages", "method": "POST", "status": 200, "latency_ms": 15.018, "event": "http.request", "level": "INFO"}
+{"request_id": "7937fc69-d5ff-43a0-8d6d-6a70b1db5a21", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "28", "book_ids": [], "model": "ollama", "level": "INFO"}
+{"request_id": "7937fc69-d5ff-43a0-8d6d-6a70b1db5a21", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "28", "book_id": null, "level": "INFO"}
+{"request_id": "7937fc69-d5ff-43a0-8d6d-6a70b1db5a21", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.error", "session_id": "28", "error": "CUDA error: no kernel image is available for execution on the device\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n", "level": "WARNING"}
+{"request_id": "7937fc69-d5ff-43a0-8d6d-6a70b1db5a21", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.complete", "session_id": "28", "error": "CUDA error: no kernel image is available for execution on the device\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n", "level": "INFO"}
+{"request_id": "7937fc69-d5ff-43a0-8d6d-6a70b1db5a21", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": 22.016, "event": "http.request", "level": "INFO"}
+{"request_id": "2916639b-4fb9-4703-9790-1238ae9e2802", "path": "/sessions/28/messages", "method": "POST", "status": 200, "latency_ms": 13.106, "event": "http.request", "level": "INFO"}
+{"request_id": "a6595fb6-a112-4cf4-acc3-4ce25e129652", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "28", "book_ids": ["aed5cfd9-a4ed-43d8-964c-1096597492a2"], "model": "ollama", "level": "INFO"}
+{"request_id": "a6595fb6-a112-4cf4-acc3-4ce25e129652", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "28", "book_id": "aed5cfd9-a4ed-43d8-964c-1096597492a2", "level": "INFO"}
+{"request_id": "a6595fb6-a112-4cf4-acc3-4ce25e129652", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.error", "session_id": "28", "error": "CUDA error: no kernel image is available for execution on the device\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n", "level": "WARNING"}
+{"request_id": "a6595fb6-a112-4cf4-acc3-4ce25e129652", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.complete", "session_id": "28", "error": "CUDA error: no kernel image is available for execution on the device\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n", "level": "INFO"}
+{"request_id": "a6595fb6-a112-4cf4-acc3-4ce25e129652", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": 20.307, "event": "http.request", "level": "INFO"}
+{"request_id": "c00cd208-3342-42c5-a995-05a723ce3276", "path": "/auth/login", "method": "POST", "status": 200, "latency_ms": 2.477, "event": "http.request", "level": "INFO"}
+{"request_id": "f3629883-c476-485e-9c91-2f78ee90aeff", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.706, "event": "http.request", "level": "INFO"}
+{"request_id": "f80caafb-f248-4319-8810-0114f7623f2b", "path": "/auth/login", "method": "POST", "status": 200, "latency_ms": 1.011, "event": "http.request", "level": "INFO"}
+{"request_id": "702fa960-ec88-4d47-8da4-dfe48eb62ddb", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.692, "event": "http.request", "level": "INFO"}
+{"request_id": "cc4c000d-f957-4449-880b-dd4be8f8556d", "path": "/auth/login", "method": "POST", "status": 200, "latency_ms": 0.901, "event": "http.request", "level": "INFO"}
+{"request_id": "16db8661-11e4-4afd-88e0-f98155a7e214", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.022, "event": "http.request", "level": "INFO"}
+{"request_id": "04c13562-a080-45e0-ae0f-fae62b5c1de6", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 33.663, "event": "http.request", "level": "INFO"}
+{"request_id": "c8db11b8-0c02-471a-b104-29eeba339b57", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 43.374, "event": "http.request", "level": "INFO"}
+{"request_id": "712c707b-7872-49d0-b3f0-936d9de31445", "path": "/books", "method": "GET", "status": 200, "latency_ms": 49.091, "event": "http.request", "level": "INFO"}
+{"request_id": "d556f680-10eb-47f3-8286-b28aae942a6d", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 8.272, "event": "http.request", "level": "INFO"}
+{"request_id": "33534104-db32-4ed2-a86d-e461323e4479", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 12.129, "event": "http.request", "level": "INFO"}
+{"request_id": "0145818c-5922-4fdc-85cd-cbff39cbcb6f", "path": "/books", "method": "GET", "status": 200, "latency_ms": 10.678, "event": "http.request", "level": "INFO"}
+{"request_id": "7b94a95f-0885-492e-87b7-60bb43dd673d", "path": "/sessions/28/messages", "method": "GET", "status": 200, "latency_ms": 12.424, "event": "http.request", "level": "INFO"}
+{"request_id": "173fea1e-fde7-435b-9802-2cdc05ccee51", "path": "/sessions/28/messages", "method": "POST", "status": 200, "latency_ms": 62.738, "event": "http.request", "level": "INFO"}
+{"request_id": "391f5f2e-ddea-47f4-a6be-1e66b0fdda31", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "28", "book_ids": ["aed5cfd9-a4ed-43d8-964c-1096597492a2"], "model": "ollama", "level": "INFO"}
+{"request_id": "391f5f2e-ddea-47f4-a6be-1e66b0fdda31", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "28", "book_id": "aed5cfd9-a4ed-43d8-964c-1096597492a2", "level": "INFO"}
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: BAAI/bge-base-en-v1.5
+{"request_id": "391f5f2e-ddea-47f4-a6be-1e66b0fdda31", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "recreating_qdrant_collection_dim_mismatch", "current": 64, "new": 768, "level": "WARNING"}
+HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+{"request_id": "391f5f2e-ddea-47f4-a6be-1e66b0fdda31", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.persisted", "session_id": "28", "citation_count": 0, "level": "INFO"}
+{"request_id": "391f5f2e-ddea-47f4-a6be-1e66b0fdda31", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.complete", "session_id": "28", "error": null, "level": "INFO"}
+{"request_id": "391f5f2e-ddea-47f4-a6be-1e66b0fdda31", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": 67960.477, "event": "http.request", "level": "INFO"}
+{"request_id": "10b516ac-6582-4425-81c6-12bb02ddf0ef", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.098, "event": "http.request", "level": "INFO"}
+{"request_id": "00675985-2448-4924-bbc9-b7fc2c4f5b5d", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.943, "event": "http.request", "level": "INFO"}
+{"request_id": "2fd12273-ac44-4a2e-9cc9-5467818e9bc5", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 5.981, "event": "http.request", "level": "INFO"}
+{"request_id": "a4640f44-ef0e-4fb4-ac2c-86eabd545aa7", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 10.251, "event": "http.request", "level": "INFO"}
+{"request_id": "be09e861-441b-4deb-9a29-93b068443733", "path": "/books", "method": "GET", "status": 200, "latency_ms": 13.235, "event": "http.request", "level": "INFO"}
+{"request_id": "cc3550ea-0a2e-49d5-ac63-49fedd3ac800", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 8.651, "event": "http.request", "level": "INFO"}
+{"request_id": "752de4f6-c04d-423f-b915-50069013d16e", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 9.233, "event": "http.request", "level": "INFO"}
+{"request_id": "2a0e8227-35dd-489a-ad80-e7163fe7cc29", "path": "/books", "method": "GET", "status": 200, "latency_ms": 11.439, "event": "http.request", "level": "INFO"}
+{"request_id": "c4a6deb6-6c46-42f1-9bdf-bb879448e9b4", "path": "/sessions/28/messages", "method": "GET", "status": 200, "latency_ms": 7.583, "event": "http.request", "level": "INFO"}
+{"request_id": "eb6df458-f98f-4832-82ce-88114c5760ac", "path": "/sessions/28/messages", "method": "POST", "status": 200, "latency_ms": 15.531, "event": "http.request", "level": "INFO"}
+{"request_id": "0a7f6a26-ece5-43c7-a7af-383e99785afb", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "28", "book_ids": [], "model": "ollama", "level": "INFO"}
+{"request_id": "0a7f6a26-ece5-43c7-a7af-383e99785afb", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "28", "book_id": null, "level": "INFO"}
+HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+{"request_id": "0a7f6a26-ece5-43c7-a7af-383e99785afb", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.persisted", "session_id": "28", "citation_count": 0, "level": "INFO"}
+{"request_id": "0a7f6a26-ece5-43c7-a7af-383e99785afb", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.complete", "session_id": "28", "error": null, "level": "INFO"}
+{"request_id": "0a7f6a26-ece5-43c7-a7af-383e99785afb", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": 10876.934, "event": "http.request", "level": "INFO"}
+{"request_id": "22f622a0-80f5-4076-8450-03cf92ded520", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.914, "event": "http.request", "level": "INFO"}
+{"request_id": "51c218ef-ed45-4480-b476-aedac77128f8", "path": "/me", "method": "GET", "status": 200, "latency_ms": 0.803, "event": "http.request", "level": "INFO"}
+{"request_id": "8f3fb096-87e2-42be-b59a-d1624fc0ed7a", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 4.253, "event": "http.request", "level": "INFO"}
+{"request_id": "25997a5b-4337-46ee-8b4e-208fa3143a24", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 7.492, "event": "http.request", "level": "INFO"}
+{"request_id": "94d27690-35e3-495f-8343-87d63e6a8bbd", "path": "/books", "method": "GET", "status": 200, "latency_ms": 11.007, "event": "http.request", "level": "INFO"}
+{"request_id": "40636f8e-c9cc-4613-81af-a195a2ab4eb8", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 6.314, "event": "http.request", "level": "INFO"}
+{"request_id": "3e0f0baf-387f-4186-bf15-01d5ca028cdd", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 7.936, "event": "http.request", "level": "INFO"}
+{"request_id": "34aabe5e-8c9f-4f34-96f8-84e627ce83ca", "path": "/books", "method": "GET", "status": 200, "latency_ms": 7.41, "event": "http.request", "level": "INFO"}
+{"request_id": "f6acc1d1-1e67-40f7-91f8-18ab6b1d1d71", "path": "/sessions/28/messages", "method": "GET", "status": 200, "latency_ms": 3.131, "event": "http.request", "level": "INFO"}
+{"request_id": "8b35ff2c-56e8-46d8-9ee1-27de04c11747", "path": "/sessions/28/messages", "method": "POST", "status": 200, "latency_ms": 59.941, "event": "http.request", "level": "INFO"}
+{"request_id": "a92fd55f-6764-4b30-802a-9177bc7cc827", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.request", "session_id": "28", "book_ids": ["aed5cfd9-a4ed-43d8-964c-1096597492a2"], "model": "ollama", "level": "INFO"}
+{"request_id": "a92fd55f-6764-4b30-802a-9177bc7cc827", "path": "/sessions/28/messages/stream", "method": "POST", "status": null, "latency_ms": null, "event": "chat.stream.start", "session_id": "28", "book_id": "aed5cfd9-a4ed-43d8-964c-1096597492a2", "level": "INFO"}
+HTTP Request: POST http://localhost:11434/api/generate "HTTP/1.1 200 OK"
+{"request_id": "a92fd55f-6764-4b30-802a-9177bc7cc827", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.persisted", "session_id": "28", "citation_count": 0, "level": "INFO"}
+{"request_id": "a92fd55f-6764-4b30-802a-9177bc7cc827", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": null, "event": "chat.stream.complete", "session_id": "28", "error": null, "level": "INFO"}
+{"request_id": "a92fd55f-6764-4b30-802a-9177bc7cc827", "path": "/sessions/28/messages/stream", "method": "POST", "status": 200, "latency_ms": 5628.698, "event": "http.request", "level": "INFO"}
+{"request_id": "5afcdcf1-3939-4253-8dbd-67a95f4cd5d3", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.267, "event": "http.request", "level": "INFO"}
+{"request_id": "6b6dbd90-aa1c-4325-9e04-045e72dc682b", "path": "/me", "method": "GET", "status": 200, "latency_ms": 1.033, "event": "http.request", "level": "INFO"}
+{"request_id": "14e4d902-ff82-4eff-aa6b-8a7fd99633e6", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 5.717, "event": "http.request", "level": "INFO"}
+{"request_id": "9f6f7318-b277-4445-9239-90ce4f5308e7", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 10.051, "event": "http.request", "level": "INFO"}
+{"request_id": "ad416369-55c0-4ea1-a147-7d6b8c5e5e68", "path": "/books", "method": "GET", "status": 200, "latency_ms": 14.208, "event": "http.request", "level": "INFO"}
+{"request_id": "2d683d58-c6b8-490c-b2c4-5b8796a352b6", "path": "/bookmarks", "method": "GET", "status": 200, "latency_ms": 5.513, "event": "http.request", "level": "INFO"}
+{"request_id": "e48d3230-d8c8-4134-84e3-3b7dc74ac8cf", "path": "/sessions", "method": "GET", "status": 200, "latency_ms": 7.234, "event": "http.request", "level": "INFO"}
+{"request_id": "b4a4d703-cc22-4cb3-a0cc-1da7462a0d91", "path": "/books", "method": "GET", "status": 200, "latency_ms": 9.287, "event": "http.request", "level": "INFO"}
+{"request_id": "cfda2be2-cfbe-40e5-b006-b430f494f1cf", "path": "/sessions/28/messages", "method": "GET", "status": 200, "latency_ms": 5.086, "event": "http.request", "level": "INFO"}
