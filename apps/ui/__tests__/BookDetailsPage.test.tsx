@@ -36,7 +36,7 @@ describe('BookDetailsPage', () => {
     expect(await screen.findByText('First Book')).toBeInTheDocument();
     expect(screen.getByText(/book id: book-1/i)).toBeInTheDocument();
     expect(screen.getByText('indexed')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith('/books/book-1', expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenCalledWith('/api/books/book-1', expect.objectContaining({ method: 'GET' }));
   });
 
   it('shows an error when the API fails', async () => {
