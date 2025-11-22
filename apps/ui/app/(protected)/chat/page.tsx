@@ -1736,6 +1736,9 @@ export default function ChatPage() {
             finalizeEvent();
             return;
           }
+          if (line.startsWith('event:')) {
+            return;
+          }
           if (line.startsWith(':')) {
             return;
           }
