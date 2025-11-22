@@ -1,12 +1,14 @@
 export PATH := $(HOME)/.local/bin:$(PATH)
+export POETRY_VIRTUALENVS_IN_PROJECT ?= true
 
 POETRY ?= $(shell command -v poetry 2>/dev/null || echo $(HOME)/.local/bin/poetry)
+VENV_DIR ?= $(CURDIR)/.venv
+VENV_BIN ?= $(VENV_DIR)/bin
 PY=$(POETRY) run
 
-.PHONY: setup lint test run up down index-sample qa logs restart seed install-poetry ensure-ollama
+.PHONY: setup lint test run up down index-sample qa logs restart seed install-poetry ensure-ollama ensure-venv
 
-setup: install-poetry
-        $(POETRY) install
+setup: ensure-venv
         pre-commit install || true
 
 lint:
@@ -17,9 +19,9 @@ lint:
 test:
         $(PY) pytest -q
 
-run: ensure-ollama
+run: ensure-ollama ensure-venv
         @echo "Starting API and UI (Ctrl+C to stop)..."
-        @$(PY) uvicorn apps.api.main:app --reload & \
+        @$(VENV_BIN)/uvicorn apps.api.main:app --reload & \
         API_PID=$$!; \
         cd apps/ui && npm ci && npm run dev & \
         UI_PID=$$!; \
@@ -32,6 +34,14 @@ install-poetry:
                 curl -sSL https://install.python-poetry.org | python3 -; \
         else \
                 echo "Poetry already installed."; \
+        fi
+
+ensure-venv: install-poetry
+        @if [ ! -d "$(VENV_DIR)" ]; then \
+                echo "Creating virtual environment in $(VENV_DIR) and installing dependencies..."; \
+                $(POETRY) install; \
+        else \
+                echo "Using existing virtual environment in $(VENV_DIR)."; \
         fi
 
 ensure-ollama:
