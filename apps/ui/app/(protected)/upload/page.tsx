@@ -177,17 +177,22 @@ export default function UploadPage() {
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexStatus, setIndexStatus] = useState<IndexStatusState>(null);
 
-  const alreadyIndexed = useMemo(
-    () => Boolean(uploadResponse?.is_indexed || uploadResponse?.vector_id),
-    [uploadResponse?.is_indexed, uploadResponse?.vector_id],
-  );
+  const uploadIndexed = useMemo(() => {
+    const chunkCount = Number(uploadResponse?.indexed_chunks ?? 0);
+    const hasChunks = Number.isFinite(chunkCount) && chunkCount > 0;
+
+    return Boolean(
+      uploadResponse &&
+        (uploadResponse.is_indexed || uploadResponse.vector_id || hasChunks || isAlreadyIndexed(uploadResponse)),
+    );
+  }, [uploadResponse]);
 
   const canTriggerIndex = useMemo(() => {
     const chunkCount = Number(uploadResponse?.indexed_chunks ?? 0);
     const hasChunks = Number.isFinite(chunkCount) && chunkCount > 0;
     const hasIdentifier = Boolean(uploadResponse?.path || uploadResponse?.book_id);
-    return hasChunks && hasIdentifier && Boolean(uploadResponse?.file_hash) && !alreadyIndexed;
-  }, [alreadyIndexed, uploadResponse?.book_id, uploadResponse?.file_hash, uploadResponse?.indexed_chunks, uploadResponse?.path]);
+    return hasChunks && hasIdentifier && Boolean(uploadResponse?.file_hash) && !uploadIndexed;
+  }, [uploadIndexed, uploadResponse?.book_id, uploadResponse?.file_hash, uploadResponse?.indexed_chunks, uploadResponse?.path]);
 
   const handleInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
@@ -258,14 +263,24 @@ export default function UploadPage() {
         xhr.send(formData);
       });
 
+      const inferredIndexed = Boolean(
+        payload?.is_indexed ||
+          payload?.vector_id ||
+          isAlreadyIndexed(payload) ||
+          (typeof payload?.indexed_chunks === 'number' && payload.indexed_chunks > 0),
+      );
+
       setUploadResponse(payload);
       setStatus({
         type: 'success',
-        message: extractMessage(payload, 'Upload completed successfully.'),
+        message: extractMessage(
+          payload,
+          inferredIndexed ? 'Upload and indexing completed successfully.' : 'Upload completed successfully.',
+        ),
       });
       setDedupMessage(
         isAlreadyIndexed(payload)
-          ? 'This file was already indexed. You can trigger indexing again if needed.'
+          ? 'This file was already indexed and does not need to be indexed again.'
           : null,
       );
       setFormValues(INITIAL_FORM);
@@ -289,7 +304,7 @@ export default function UploadPage() {
       return;
     }
 
-    if (alreadyIndexed) {
+    if (uploadIndexed) {
       setIndexStatus({
         type: 'error',
         message: 'This book is already indexed.',
@@ -381,7 +396,7 @@ export default function UploadPage() {
     } finally {
       setIsIndexing(false);
     }
-  }, [alreadyIndexed, csrfToken, uploadResponse]);
+  }, [csrfToken, uploadIndexed, uploadResponse]);
 
   const clampedProgress = progress === null ? 0 : Math.min(100, Math.max(0, progress));
   const progressFillStyle = useMemo(
