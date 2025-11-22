@@ -8,13 +8,22 @@ import os
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import JSONResponse, StreamingResponse
+
+from apps.api.auth import (
+    authenticate_user,
+    create_access_token,
+    get_current_user,
+    get_user_bookmarks,
+    get_user_profile,
+)
+from core.config import settings
 
 try:
     from . import local_llm  # type: ignore
@@ -74,6 +83,19 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     response: str
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., description="User email")
+    password: str = Field(..., description="User password")
+
+
+def _csrf_headers(token: str | None) -> dict[str, str]:
+    """Return CSRF response headers when a token is available."""
+
+    if token:
+        return {"x-csrf-token": token}
+    return {}
 
 
 class Session(BaseModel):
@@ -225,6 +247,42 @@ def version() -> dict[str, str]:
     return {"version": "0.1.0"}
 
 
+@app.post("/auth/login")
+def login(request: LoginRequest) -> JSONResponse:
+    """Authenticate the user and issue a cookie-based access token."""
+
+    record = authenticate_user(request.email, request.password)
+    token = create_access_token({"sub": record["id"], "email": record["email"]})
+    profile = get_user_profile(record["id"])
+    max_age = settings.jwt_expiration_seconds
+    cookie_parts = [f"access_token={token}", "HttpOnly", "Path=/", "SameSite=Lax"]
+    if max_age:
+        cookie_parts.append(f"Max-Age={int(max_age)}")
+    headers = {"set-cookie": "; ".join(cookie_parts), **_csrf_headers(token)}
+    return JSONResponse({"user": profile}, headers=headers)
+
+
+@app.get("/me")
+def me(
+    request: Request,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> JSONResponse:
+    """Return the current user profile along with a CSRF token header."""
+
+    cookie_token = request.cookies.get("access_token") if hasattr(request, "cookies") else None
+    token = cookie_token if isinstance(cookie_token, str) and cookie_token else None
+    return JSONResponse(current_user, headers=_csrf_headers(token))
+
+
+@app.post("/auth/logout")
+def logout() -> JSONResponse:
+    """Clear the auth cookie and return a success status."""
+
+    response = JSONResponse({"status": "ok"}, headers=_csrf_headers(None))
+    response.delete_cookie("access_token", path="/")
+    return response
+
+
 @app.post("/upload")
 async def upload(file: UploadFile = UPLOAD_FILE_PARAM) -> dict[str, Any]:
     """Persist the uploaded file under the configured books directory."""
@@ -273,6 +331,18 @@ def list_sessions() -> list[Session]:
     """Return all stored chat sessions."""
 
     return SESSIONS
+
+
+@app.get("/bookmarks")
+def list_bookmarks(
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)]
+) -> list[dict[str, Any]]:
+    """Return the bookmark collection for the current user."""
+
+    user_id = current_user.get("id")
+    if not isinstance(user_id, str):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid user profile")
+    return get_user_bookmarks(user_id)
 
 
 @app.post("/sessions", response_model=Session, status_code=status.HTTP_201_CREATED)
@@ -385,6 +455,10 @@ async def stream_session_message(
 
 __all__ = [
     "app",
+    "list_bookmarks",
+    "login",
+    "logout",
+    "me",
     "create_session_message",
     "create_session",
     "delete_session",
