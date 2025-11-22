@@ -75,7 +75,7 @@ describe('BooksPage', () => {
     expect(await screen.findByText('First Book')).toBeInTheDocument();
     expect(screen.getByText('Second Book')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      '/books?limit=10&offset=0',
+      '/api/books?limit=10&offset=0',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });
@@ -140,7 +140,7 @@ describe('BooksPage', () => {
     await screen.findByText('Renamed Book');
 
     const renameCall = fetchMock.mock.calls[1];
-    expect(renameCall[0]).toBe('/books/book-1/rename');
+    expect(renameCall[0]).toBe('/api/books/book-1/rename');
     expect(renameCall[1]).toMatchObject({
       method: 'PATCH',
       credentials: 'include',
@@ -199,7 +199,7 @@ describe('BooksPage', () => {
     });
 
     const deleteCall = fetchMock.mock.calls[1];
-    expect(deleteCall[0]).toBe('/books/book-1');
+    expect(deleteCall[0]).toBe('/api/books/book-1');
     expect(deleteCall[1]).toMatchObject({
       method: 'DELETE',
       credentials: 'include',

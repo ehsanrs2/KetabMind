@@ -130,7 +130,7 @@ describe('ChatPage', () => {
       }
       const method = (init?.method ?? 'GET').toUpperCase();
 
-      if (url === '/books' && method === 'GET') {
+      if (url.startsWith('/api/books') && method === 'GET') {
         return Promise.resolve(
           createJsonResponse({
             books: [
@@ -391,7 +391,7 @@ describe('ChatPage', () => {
       }
       const method = (init?.method ?? 'GET').toUpperCase();
 
-      if (url === '/books' && method === 'GET') {
+      if (url.startsWith('/api/books') && method === 'GET') {
         return Promise.resolve(
           createJsonResponse({
             books: [
@@ -490,7 +490,7 @@ describe('ChatPage', () => {
       }
       const method = (init?.method ?? 'GET').toUpperCase();
 
-      if (url === '/books' && method === 'GET') {
+      if (url.startsWith('/api/books') && method === 'GET') {
         return Promise.resolve(createJsonResponse({ books: [] }));
       }
 
@@ -581,7 +581,7 @@ describe('ChatPage', () => {
         }
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (url === '/books' && method === 'GET') {
+        if (url.startsWith('/api/books') && method === 'GET') {
           return Promise.resolve(createJsonResponse({ books: [] }));
         }
 
@@ -642,7 +642,7 @@ describe('ChatPage', () => {
         }
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (url === '/books' && method === 'GET') {
+        if (url.startsWith('/api/books') && method === 'GET') {
           return Promise.resolve(createJsonResponse({ books: [] }));
         }
 

@@ -27,6 +27,8 @@ export type BookResponse = {
   book: BookRecord;
 };
 
+const BOOKS_API_BASE_PATH = '/api/books';
+
 function buildQuery(params: Record<string, number | string | undefined>): string {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -77,7 +79,7 @@ export async function listBooks({
   limit: number;
   offset: number;
 }): Promise<BookListResponse> {
-  const response = await fetch(`/books${buildQuery({ limit, offset })}`, {
+  const response = await fetch(`${BOOKS_API_BASE_PATH}${buildQuery({ limit, offset })}`, {
     method: 'GET',
     credentials: 'include',
   });
@@ -96,7 +98,7 @@ export async function listBooks({
 }
 
 export async function getBook(bookId: string): Promise<BookRecord> {
-  const response = await fetch(`/books/${encodeURIComponent(bookId)}`, {
+  const response = await fetch(`${BOOKS_API_BASE_PATH}/${encodeURIComponent(bookId)}`, {
     method: 'GET',
     credentials: 'include',
   });
@@ -123,7 +125,7 @@ export async function renameBook(
   },
   csrfToken: string | null,
 ): Promise<BookRecord> {
-  const response = await fetch(`/books/${encodeURIComponent(bookId)}/rename`, {
+  const response = await fetch(`${BOOKS_API_BASE_PATH}/${encodeURIComponent(bookId)}/rename`, {
     method: 'PATCH',
     credentials: 'include',
     headers: {
@@ -145,7 +147,7 @@ export async function renameBook(
 }
 
 export async function deleteBook(bookId: string, csrfToken: string | null): Promise<void> {
-  const response = await fetch(`/books/${encodeURIComponent(bookId)}`, {
+  const response = await fetch(`${BOOKS_API_BASE_PATH}/${encodeURIComponent(bookId)}`, {
     method: 'DELETE',
     credentials: 'include',
     headers: csrfToken ? { 'x-csrf-token': csrfToken } : undefined,
