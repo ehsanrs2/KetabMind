@@ -420,6 +420,31 @@ function buildCitationLinksFromStrings(citations: string[] | undefined): Citatio
   });
 }
 
+function mergeCitationLinks(
+  existing: CitationLink[] | undefined,
+  incoming: CitationLink[] | undefined,
+): CitationLink[] | undefined {
+  if (!incoming || incoming.length === 0) {
+    return existing;
+  }
+
+  if (!existing || existing.length === 0) {
+    return incoming;
+  }
+
+  const seen = new Set(existing.map((item) => item.label));
+  const merged = [...existing];
+
+  for (const link of incoming) {
+    if (!seen.has(link.label)) {
+      merged.push(link);
+      seen.add(link.label);
+    }
+  }
+
+  return merged;
+}
+
 function renderMessageContent(content: string) {
   const citationPattern = /\[([^:\]]+):(\d+)(?:-(\d+))?\]/g;
   const segments: Array<string | { label: string; href: string }> = [];
@@ -1641,9 +1666,17 @@ export default function ChatPage() {
           }
 
           if (Array.isArray(payload.contexts)) {
-            finalCitations = buildCitationLinksFromContexts(
+            const contextLinks = buildCitationLinksFromContexts(
               payload.contexts as Array<Record<string, unknown>>,
             );
+            finalCitations = mergeCitationLinks(finalCitations, contextLinks);
+          }
+
+          if (Array.isArray(payload.citations)) {
+            const citationLinks = buildCitationLinksFromStrings(
+              payload.citations as string[] | undefined,
+            );
+            finalCitations = mergeCitationLinks(finalCitations, citationLinks);
           }
 
           if (payload.meta && typeof payload.meta === 'object') {
