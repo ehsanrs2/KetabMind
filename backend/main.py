@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 try:
@@ -284,8 +284,12 @@ def create_session(payload: SessionCreate) -> Session:
     return session
 
 
-@app.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_session(session_id: UUID) -> None:
+@app.delete(
+    "/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def delete_session(session_id: UUID) -> Response:
     """Remove the chat session matching the provided identifier."""
 
     session = _get_session(session_id)
@@ -294,6 +298,8 @@ def delete_session(session_id: UUID) -> None:
 
     SESSIONS.remove(session)
     messages_store.pop(str(session.id), None)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/sessions/{session_id}/messages", response_model=list[Message])
