@@ -8,6 +8,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
 from answering.citations import build_citations
 from answering.guardrails import refusal_message, should_refuse
 from core import config
@@ -22,6 +23,7 @@ from .template import (
 )
 
 _retriever = Retriever()
+log = structlog.get_logger(__name__)
 
 DEFAULT_SYSTEM_INSTRUCTIONS = "You are KetabMind, a helpful research assistant."
 MODEL_TOKENIZER_OVERRIDES: dict[str, str] = {
@@ -144,17 +146,38 @@ def _refusal_rule() -> str:
 def answer(query: str, top_k: int = 8, *, book_id: str | None = None) -> dict[str, Any]:
     config = _load_config()
     contexts = _retriever.retrieve(query, top_k=top_k, book_id=book_id)
+    log.info(
+        "retrieval.success",
+        book_id=book_id,
+        total_contexts=len(contexts),
+        top_snippets=[ctx.text[:100] for ctx in contexts[:3]],
+    )
     if not any(c.text.strip() for c in contexts):
         follow_up = f"{query} explain further"
         contexts = _retriever.retrieve(follow_up, top_k=top_k, book_id=book_id)
+        log.info(
+            "retrieval.follow_up",
+            book_id=book_id,
+            original_query=query,
+            follow_up=follow_up,
+            total_contexts=len(contexts),
+            top_snippets=[ctx.text[:100] for ctx in contexts[:3]],
+        )
     selected_contexts = select_contexts_within_budget(
         query,
         contexts,
         config.tokenizer_name,
         config.max_input_tokens,
     )
+    log.info(
+        "contexts.selected",
+        book_id=book_id,
+        used_contexts=len(selected_contexts),
+        used_snippets=[ctx.text[:100] for ctx in selected_contexts],
+    )
     serialized_contexts = [_serialize_context(chunk) for chunk in selected_contexts]
     prompt = _prepare_prompt(query, selected_contexts, config)
+    log.debug("prompt.built", book_id=book_id, prompt=prompt)
     llm: LLM = get_llm()
     raw_answer = llm.generate(prompt, stream=False)
     answer_text = ensure_stop_sequences(_consume_response(raw_answer), config.stop_sequences)
@@ -166,6 +189,14 @@ def answer(query: str, top_k: int = 8, *, book_id: str | None = None) -> dict[st
     if refused:
         citations = build_citations(serialized_contexts, "[${book_id}:${page_start}-${page_end}]")
         answer_text = refusal_message(language, citations)
+    log.info(
+        "answer.generated",
+        book_id=book_id,
+        answer=answer_text,
+        coverage=f"{coverage:.2f}",
+        confidence=f"{confidence:.2f}",
+        citations_in_answer=bool(re.search(r"\[.+?:\d", answer_text)),
+    )
     est_input_tokens = estimate_token_count(
         [query, *(ctx.text for ctx in selected_contexts)],
         config.tokenizer_name,
@@ -207,17 +238,38 @@ def stream_answer(
 
     config = _load_config()
     contexts = _retriever.retrieve(query, top_k=top_k, book_id=book_id)
+    log.info(
+        "retrieval.success",
+        book_id=book_id,
+        total_contexts=len(contexts),
+        top_snippets=[ctx.text[:100] for ctx in contexts[:3]],
+    )
     if not any(c.text.strip() for c in contexts):
         follow_up = f"{query} explain further"
         contexts = _retriever.retrieve(follow_up, top_k=top_k, book_id=book_id)
+        log.info(
+            "retrieval.follow_up",
+            book_id=book_id,
+            original_query=query,
+            follow_up=follow_up,
+            total_contexts=len(contexts),
+            top_snippets=[ctx.text[:100] for ctx in contexts[:3]],
+        )
     selected_contexts = select_contexts_within_budget(
         query,
         contexts,
         config.tokenizer_name,
         config.max_input_tokens,
     )
+    log.info(
+        "contexts.selected",
+        book_id=book_id,
+        used_contexts=len(selected_contexts),
+        used_snippets=[ctx.text[:100] for ctx in selected_contexts],
+    )
     serialized_contexts = [_serialize_context(chunk) for chunk in selected_contexts]
     prompt = _prepare_prompt(query, selected_contexts, config)
+    log.debug("prompt.built", book_id=book_id, prompt=prompt)
     llm: LLM = get_llm()
     stream_result = llm.generate(prompt, stream=True)
     language = _detect_language(query)
@@ -247,6 +299,14 @@ def stream_answer(
                 "confidence": confidence,
             },
         }
+        log.info(
+            "answer.generated",
+            book_id=book_id,
+            answer=final_answer,
+            coverage=f"{coverage:.2f}",
+            confidence=f"{confidence:.2f}",
+            citations_in_answer=bool(re.search(r"\[.+?:\d", final_answer)),
+        )
         return {
             "answer": final_answer,
             "contexts": serialized_contexts,

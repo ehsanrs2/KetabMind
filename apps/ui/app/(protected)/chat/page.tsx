@@ -1520,6 +1520,11 @@ export default function ChatPage() {
       const streamUrl =
         streamParams.size > 0 ? `${baseStreamPath}?${streamParams.toString()}` : baseStreamPath;
 
+      console.log('Submitting question', {
+        prompt: trimmedPrompt,
+        selectedBooks: selectedBookIds,
+      });
+
       let aggregatedText = assistantMessage.content;
       let finalAnswer: string | null = null;
       let finalCitations: CitationLink[] | undefined;
@@ -1776,6 +1781,14 @@ export default function ChatPage() {
           error.name = STREAM_INCOMPLETE_ERROR;
           throw error;
         }
+
+        console.log('Answer received', {
+          selectedBooks: selectedBookIds,
+          answer: finalAnswer ?? aggregatedText,
+          citations: finalCitations,
+          coverage: finalMeta?.coverage,
+          confidence: finalMeta?.confidence,
+        });
 
         applyAssistantUpdate((message) => {
           const resolvedContent = (finalAnswer ?? aggregatedText) || message.content;
