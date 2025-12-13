@@ -6,7 +6,8 @@ import hmac
 import json
 import os
 import uuid
-from typing import Any, Dict
+from collections import defaultdict
+from typing import Any, Dict, Set
 
 import redis.asyncio as aioredis
 import structlog
@@ -22,6 +23,10 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 logger = structlog.get_logger(__name__)
 
 app = FastAPI()
+
+request_websocket_map: dict[str, WebSocket] = {}
+request_task_map: dict[str, asyncio.Task[None]] = {}
+websocket_requests_map: dict[WebSocket, Set[str]] = defaultdict(set)
 
 
 async def create_redis_client() -> aioredis.Redis:
@@ -112,39 +117,73 @@ async def enqueue_job(redis: aioredis.Redis, payload: str, user_id: str | None) 
     return request_id
 
 
+def _remove_request(request_id: str, *, current_task: asyncio.Task[None] | None = None) -> list[asyncio.Task[None]]:
+    task = request_task_map.pop(request_id, None)
+    websocket = request_websocket_map.pop(request_id, None)
+
+    if websocket:
+        websocket_requests = websocket_requests_map.get(websocket)
+        if websocket_requests is not None:
+            websocket_requests.discard(request_id)
+            if not websocket_requests:
+                websocket_requests_map.pop(websocket, None)
+
+    logger.info("request_mapping.removed", request_id=request_id)
+
+    if task and task is not current_task and not task.done():
+        task.cancel()
+        return [task]
+    return []
+
+
 async def forward_results(websocket: WebSocket, request_id: str) -> None:
     stream_name = f"results:{request_id}"
     last_id = "0-0"
+    redis: aioredis.Redis | None = None
+    logger.info("results.listener_started", request_id=request_id)
+    try:
+        redis = await create_redis_client()
+        loop = asyncio.get_running_loop()
+        last_message_at = loop.time()
 
-    while websocket.application_state == WebSocketState.CONNECTED:
-        redis: aioredis.Redis | None = None
-        try:
-            redis = await create_redis_client()
-            while websocket.application_state == WebSocketState.CONNECTED:
-                messages = await redis.xread({stream_name: last_id}, block=1_000, count=10)
-                if not messages:
-                    continue
+        while websocket.application_state == WebSocketState.CONNECTED:
+            messages = await redis.xread({stream_name: last_id}, block=1_000, count=10)
+            if not messages:
+                if loop.time() - last_message_at >= 60:
+                    logger.info("results.listener_timeout", request_id=request_id)
+                    break
+                continue
 
-                for _, entries in messages:
-                    for message_id, data in entries:
-                        last_id = message_id
-                        await websocket.send_json(data)
-                        logger.info(
-                            "websocket.forwarded_result",
-                            request_id=request_id,
-                            message_id=message_id,
-                        )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "results.listener_error",
-                request_id=request_id,
-                error=str(exc),
-            )
-            await asyncio.sleep(1)
-        finally:
-            await close_redis(redis)
+            last_message_at = loop.time()
+            for _, entries in messages:
+                for message_id, data in entries:
+                    last_id = message_id
+                    await websocket.send_json(data)
+                    logger.info(
+                        "websocket.forwarded_result",
+                        request_id=request_id,
+                        message_id=message_id,
+                        message_type=data.get("type"),
+                    )
+                    if data.get("type") in {"done", "error"}:
+                        logger.info("results.listener_completed", request_id=request_id)
+                        return
+    except asyncio.CancelledError:
+        logger.info("results.listener_cancelled", request_id=request_id)
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "results.listener_error",
+            request_id=request_id,
+            error=str(exc),
+        )
+    finally:
+        await close_redis(redis)
+        cleanup_tasks = _remove_request(request_id, current_task=asyncio.current_task())
+        if cleanup_tasks:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+        logger.info("results.listener_stopped", request_id=request_id)
 
 
 @app.websocket("/ws")
@@ -167,7 +206,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     redis = await create_redis_client()
     ping = asyncio.create_task(ping_task(websocket))
-    listener_tasks: list[asyncio.Task[None]] = []
 
     try:
         while True:
@@ -179,7 +217,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 user_id = claims.get("user_id") or claims.get("sub")
                 request_id = await enqueue_job(redis, str(payload), user_id)
                 listener = asyncio.create_task(forward_results(websocket, request_id))
-                listener_tasks.append(listener)
+                request_websocket_map[request_id] = websocket
+                request_task_map[request_id] = listener
+                websocket_requests_map[websocket].add(request_id)
+                logger.info("request_mapping.created", request_id=request_id)
                 await websocket.send_json({"type": "job_started", "request_id": request_id})
                 logger.info("websocket.job_started", request_id=request_id)
             else:
@@ -192,8 +233,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         ping.cancel()
         with contextlib.suppress(Exception):
             await ping
-        for task in listener_tasks:
-            task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await asyncio.gather(*listener_tasks, return_exceptions=True)
+        pending_cleanup: list[asyncio.Task[None]] = []
+        for request_id in list(websocket_requests_map.get(websocket, set())):
+            pending_cleanup.extend(_remove_request(request_id))
+        if pending_cleanup:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await asyncio.gather(*pending_cleanup, return_exceptions=True)
         await close_redis(redis)
