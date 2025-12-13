@@ -12,26 +12,11 @@ from fastapi import FastAPI, WebSocket, status
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 
-logger = structlog.get_logger(__name__)
-
 JWT_SECRET = os.getenv("JWT_SECRET", "secret")
 JWT_ALGORITHM = "HS256"
+PING_INTERVAL_SECONDS = 20
 
-
-def _get_ping_interval_seconds() -> float:
-    raw = os.getenv("PING_INTERVAL_SECONDS", "20")
-    try:
-        return float(raw)
-    except ValueError:
-        logger.warning(
-            "websocket.invalid_ping_interval",
-            provided=raw,
-            default="20",
-        )
-        return 20.0
-
-
-PING_INTERVAL_SECONDS = _get_ping_interval_seconds()
+logger = structlog.get_logger(__name__)
 
 app = FastAPI()
 
