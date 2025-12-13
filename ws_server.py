@@ -158,16 +158,35 @@ async def forward_results(websocket: WebSocket, request_id: str) -> None:
             for _, entries in messages:
                 for message_id, data in entries:
                     last_id = message_id
-                    await websocket.send_json(data)
+                    message_type = data.get("type")
+
+                    if message_type == "chunk":
+                        await websocket.send_json(data)
+                        logger.info(
+                            "websocket.forwarded_chunk",
+                            request_id=request_id,
+                            message_id=message_id,
+                            seq=data.get("seq"),
+                        )
+                        continue
+
+                    if message_type in {"done", "error"}:
+                        await websocket.send_json(data)
+                        logger.info(
+                            "results.listener_completed",
+                            request_id=request_id,
+                            message_id=message_id,
+                            message_type=message_type,
+                        )
+                        return
+
                     logger.info(
                         "websocket.forwarded_result",
                         request_id=request_id,
                         message_id=message_id,
-                        message_type=data.get("type"),
+                        message_type=message_type,
                     )
-                    if data.get("type") in {"done", "error"}:
-                        logger.info("results.listener_completed", request_id=request_id)
-                        return
+                    await websocket.send_json(data)
     except asyncio.CancelledError:
         logger.info("results.listener_cancelled", request_id=request_id)
         raise

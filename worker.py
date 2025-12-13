@@ -31,8 +31,25 @@ async def ensure_group(redis: aioredis.Redis) -> None:
 async def handle_job(redis: aioredis.Redis, message_id: str, data: dict[str, Any]) -> None:
     request_id = data.get("request_id")
     logger.info("worker.processing", request_id=request_id, message_id=message_id)
-    await asyncio.sleep(1)
     result_stream = f"results:{request_id}"
+    chunks = [
+        "Processing your request...",
+        "Generating insights...",
+        "Finalizing response...",
+    ]
+
+    for idx, chunk in enumerate(chunks, start=1):
+        await redis.xadd(
+            result_stream,
+            {
+                "type": "chunk",
+                "request_id": request_id,
+                "seq": idx,
+                "data": chunk,
+            },
+        )
+        await asyncio.sleep(0.2)
+
     await redis.xadd(
         result_stream,
         {
