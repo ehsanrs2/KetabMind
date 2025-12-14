@@ -1,6 +1,7 @@
 import asyncio
 import os
 import socket
+import uuid
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -9,7 +10,7 @@ import structlog
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 GROUP_NAME = os.getenv("REDIS_GROUP", "workers")
 STREAM_NAME = os.getenv("REDIS_STREAM", "jobs")
-CONSUMER_NAME = os.getenv("REDIS_CONSUMER", socket.gethostname())
+CONSUMER_NAME = os.getenv("REDIS_CONSUMER") or f"{socket.gethostname()}-{uuid.uuid4()}"
 
 logger = structlog.get_logger(__name__)
 
@@ -26,6 +27,30 @@ async def ensure_group(redis: aioredis.Redis) -> None:
         if "BUSYGROUP" not in str(exc):
             raise
         logger.info("redis.group_exists", stream=STREAM_NAME, group=GROUP_NAME)
+
+
+async def ensure_consumer(redis: aioredis.Redis) -> None:
+    try:
+        await redis.xgroup_createconsumer(STREAM_NAME, GROUP_NAME, CONSUMER_NAME)
+        logger.info(
+            "redis.consumer_created",
+            stream=STREAM_NAME,
+            group=GROUP_NAME,
+            consumer=CONSUMER_NAME,
+        )
+    except aioredis.ResponseError as exc:
+        if "NOGROUP" in str(exc):
+            await ensure_group(redis)
+            await ensure_consumer(redis)
+            return
+        logger.error(
+            "redis.consumer_error",
+            stream=STREAM_NAME,
+            group=GROUP_NAME,
+            consumer=CONSUMER_NAME,
+            error=str(exc),
+        )
+        raise
 
 
 async def handle_job(redis: aioredis.Redis, message_id: str, data: dict[str, Any]) -> None:
@@ -95,6 +120,7 @@ async def main() -> None:
         try:
             redis = create_redis()
             await ensure_group(redis)
+            await ensure_consumer(redis)
             await consume(redis)
         except asyncio.CancelledError:
             break

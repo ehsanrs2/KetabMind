@@ -19,6 +19,8 @@ JWT_SECRET = os.getenv("JWT_SECRET", "secret")
 JWT_ALGORITHM = "HS256"
 PING_INTERVAL_SECONDS = 20
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "3"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 
 logger = structlog.get_logger(__name__)
 
@@ -115,6 +117,27 @@ async def enqueue_job(redis: aioredis.Redis, payload: str, user_id: str | None) 
     await redis.xadd("jobs", data)
     logger.info("redis.job_enqueued", request_id=request_id)
     return request_id
+
+
+async def check_rate_limit(redis: aioredis.Redis, user_id: str) -> tuple[bool, int]:
+    key = f"rate_limit:{user_id}"
+    current = await redis.incr(key)
+    if current == 1:
+        await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS)
+
+    ttl = await redis.ttl(key)
+    retry_after = ttl if ttl and ttl > 0 else RATE_LIMIT_WINDOW_SECONDS
+    is_limited = current > RATE_LIMIT_REQUESTS
+
+    if is_limited:
+        logger.warning(
+            "websocket.rate_limited",
+            user_id=user_id,
+            retry_after=retry_after,
+            count=current,
+        )
+
+    return is_limited, int(retry_after)
 
 
 def _remove_request(request_id: str, *, current_task: asyncio.Task[None] | None = None) -> list[asyncio.Task[None]]:
@@ -233,7 +256,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
             if message.get("type") == "start_job":
                 payload = message.get("payload", "")
-                user_id = claims.get("user_id") or claims.get("sub")
+                user_id = claims.get("sub") or claims.get("user_id")
+
+                if user_id:
+                    limited, retry_after = await check_rate_limit(redis, str(user_id))
+                    if limited:
+                        await websocket.send_json(
+                            {"type": "rate_limited", "retry_after": retry_after}
+                        )
+                        continue
+
                 request_id = await enqueue_job(redis, str(payload), user_id)
                 listener = asyncio.create_task(forward_results(websocket, request_id))
                 request_websocket_map[request_id] = websocket
